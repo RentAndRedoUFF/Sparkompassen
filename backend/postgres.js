@@ -12,6 +12,8 @@ const schema = `
     credential_version uuid NOT NULL,
     history jsonb NOT NULL DEFAULT '[]'
   );
+  ALTER TABLE mittcsn_accounts ADD COLUMN IF NOT EXISTS email_verified boolean NOT NULL DEFAULT false;
+  ALTER TABLE mittcsn_accounts ADD COLUMN IF NOT EXISTS email_actions jsonb NOT NULL DEFAULT '{}';
   CREATE TABLE IF NOT EXISTS mittcsn_sessions (
     token text PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES mittcsn_accounts(id) ON DELETE CASCADE,
@@ -27,7 +29,7 @@ const schema = `
   CREATE INDEX IF NOT EXISTS mittcsn_auth_attempts_expiry ON mittcsn_auth_attempts(expires_at);
 `;
 
-const accountFields = 'id, name, email, password, credential_version AS "credentialVersion"';
+const accountFields = 'id, name, email, password, email_verified AS "emailVerified", credential_version AS "credentialVersion"';
 
 function createPostgresStorage(connectionString) {
   const pool = new Pool({ connectionString, max: 3, connectionTimeoutMillis: 5000, idleTimeoutMillis: 10000 });
@@ -62,6 +64,14 @@ function createPostgresStorage(connectionString) {
     return (await query(sql, values)).rows[0];
   }
 
+  async function consumeEmailAction(id, kind, token, changes, values = []) {
+    return first(`UPDATE mittcsn_accounts SET ${changes}
+      WHERE id = $1 AND email_actions->($2::text)->>'token' = $3
+        AND (email_actions->($2::text)->>'expires')::bigint > $4
+        AND email_actions->($2::text)->>'version' = credential_version::text
+      RETURNING id`, [id, kind, token, Date.now(), ...values]);
+  }
+
   return {
     close: () => pool.end(),
     getUserByEmail(email) {
@@ -74,11 +84,25 @@ function createPostgresStorage(connectionString) {
       ));
     },
     saveName(id, name) {
-      return first('UPDATE mittcsn_accounts SET name = $2 WHERE id = $1 RETURNING id, name, email', [id, name]);
+      return first('UPDATE mittcsn_accounts SET name = $2 WHERE id = $1 RETURNING id, name, email, email_verified AS "emailVerified"', [id, name]);
     },
     changePassword(id, version, password, newVersion) {
-      return first(`UPDATE mittcsn_accounts SET password = $3, credential_version = $4
+      return first(`UPDATE mittcsn_accounts SET password = $3, credential_version = $4, email_actions = '{}'
         WHERE id = $1 AND credential_version = $2 RETURNING ${accountFields}`, [id, version, password, newVersion]);
+    },
+    deleteUser(id, version) {
+      return first('DELETE FROM mittcsn_accounts WHERE id = $1 AND credential_version = $2 RETURNING id', [id, version]);
+    },
+    saveEmailAction(id, kind, action) {
+      return first(`UPDATE mittcsn_accounts
+        SET email_actions = jsonb_set(email_actions, ARRAY[$2::text], $3::jsonb)
+        WHERE id = $1 AND credential_version = $4 RETURNING id`, [id, kind, JSON.stringify(action), action.version]);
+    },
+    verifyEmail(id, token) {
+      return consumeEmailAction(id, 'verify', token, 'email_verified = true, email_actions = email_actions - $2::text');
+    },
+    resetPassword(id, token, password, newVersion) {
+      return consumeEmailAction(id, 'reset', token, "password = $5, credential_version = $6, email_actions = '{}'", [password, newVersion]);
     },
     async getHistory(id) {
       return (await first('SELECT history FROM mittcsn_accounts WHERE id = $1', [id]))?.history ?? [];
@@ -87,6 +111,14 @@ function createPostgresStorage(connectionString) {
       return first(`UPDATE mittcsn_accounts
         SET history = jsonb_path_query_array(jsonb_build_array($2::jsonb) || history, $3::jsonpath)
         WHERE id = $1 RETURNING id`, [id, JSON.stringify(item), `$[0 to ${MAX_HISTORY - 1}]`]);
+    },
+    renameHistory(id, itemId, title) {
+      return first(`UPDATE mittcsn_accounts
+        SET history = (SELECT jsonb_agg(
+          CASE WHEN entry->>'id' = $2 THEN entry || jsonb_build_object('title', $3::text) ELSE entry END ORDER BY position)
+          FROM jsonb_array_elements(history) WITH ORDINALITY AS items(entry, position))
+        WHERE id = $1 AND history @> jsonb_build_array(jsonb_build_object('id', $2::text))
+        RETURNING id`, [id, itemId, title]);
     },
     deleteHistory(id, itemId) {
       return first(`UPDATE mittcsn_accounts
@@ -102,7 +134,7 @@ function createPostgresStorage(connectionString) {
       [token, user.id, credentialVersion(user), new Date(expires)]);
     },
     getSession(token) {
-      return first(`SELECT a.id, a.name, a.email, a.password, a.credential_version AS "credentialVersion"
+      return first(`SELECT a.id, a.name, a.email, a.password, a.email_verified AS "emailVerified", a.credential_version AS "credentialVersion"
         FROM mittcsn_sessions AS s JOIN mittcsn_accounts AS a ON a.id = s.user_id
         WHERE s.token = $1 AND s.expires_at > now() AND s.credential_version = a.credential_version`, [token]);
     },

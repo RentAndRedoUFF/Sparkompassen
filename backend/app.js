@@ -5,10 +5,15 @@ const crypto = require('node:crypto');
 const express = require('express');
 const helmet = require('helmet');
 const { calculateLoan } = require('./calculator');
+const { createMailer } = require('./email');
 const { createLocalStorage, credentialVersion, hashPassword, passwordMatches } = require('./storage');
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const EMAIL_ACTION_MS = { verify: 24 * 60 * 60 * 1000, reset: 30 * 60 * 1000 };
+const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const EMAIL_UNAVAILABLE = 'E-postfunktionen är tillfälligt otillgänglig.';
+const INVALID_LINK = 'Länken är ogiltig, använd eller har gått ut. Begär en ny länk.';
 const SESSION_COOKIE = 'spark_session';
 const ACCOUNT_UNAVAILABLE = 'Konton är tillfälligt otillgängliga. Du kan fortfarande använda kalkylatorn.';
 
@@ -21,8 +26,8 @@ function digest(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function publicUser({ id, name, email }) {
-  return { id, name, email };
+function publicUser({ id, name, email, emailVerified }) {
+  return { id, name, email, emailVerified: Boolean(emailVerified) };
 }
 
 function normalized(value) {
@@ -41,7 +46,7 @@ function validPassword(password) {
   return typeof password === 'string' && password.length >= 12 && password.length <= 128;
 }
 
-function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, store } = {}) {
+function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, store, sendMail = createMailer({ hosted }) } = {}) {
   const app = express();
   const storage = store ?? (databaseUrl
     ? require('./postgres').createPostgresStorage(databaseUrl)
@@ -88,7 +93,7 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
   app.get('/api/auth/me', async (req, res) => {
     if (!storage) return res.json({ user: null, demo: true });
     const user = await currentUser(req);
-    res.json({ user: user ? publicUser(user) : null });
+    res.json({ user: user ? publicUser(user) : null, ...(sendMail ? { emailAvailable: true } : {}) });
   });
   app.use(['/api/auth', '/api/history'], (_req, res, next) => {
     if (!storage) return res.status(503).json({ error: ACCOUNT_UNAVAILABLE });
@@ -115,15 +120,32 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
     res.cookie(SESSION_COOKIE, token, { ...cookieOptions, maxAge: SESSION_MS });
   }
 
-  async function overLimit(req, scope, max) {
+  async function overLimit(req, scope, max, subject = req.ip) {
     const bucket = Math.floor(Date.now() / ATTEMPT_WINDOW_MS);
-    const key = digest(JSON.stringify([scope, req.ip, bucket]));
+    const key = digest(JSON.stringify([scope, subject, bucket]));
     return await storage.countAttempt(key, (bucket + 1) * ATTEMPT_WINDOW_MS) > max;
   }
 
   function tooManyAttempts(res) {
     res.set('Retry-After', String(Math.ceil((ATTEMPT_WINDOW_MS - Date.now() % ATTEMPT_WINDOW_MS) / 1000)));
     return res.status(429).json({ error: 'För många försök. Försök igen om en stund.' });
+  }
+
+  async function sendEmailAction(user, kind) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const saved = await storage.saveEmailAction(user.id, kind, {
+      token: digest(token),
+      expires: Date.now() + EMAIL_ACTION_MS[kind],
+      version: credentialVersion(user),
+    });
+    if (saved) await sendMail({ email: user.email, kind, token: `${user.id}.${token}` });
+  }
+
+  function readEmailToken(value) {
+    if (typeof value !== 'string') return null;
+    const [id, token, extra] = value.split('.');
+    return UUID.test(id) && /^[a-f0-9]{64}$/.test(token) && extra === undefined
+      ? { id, token: digest(token) } : null;
   }
 
   app.post('/api/auth/register', async (req, res) => {
@@ -140,6 +162,13 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
       return res.status(409).json({ error: 'E-postadressen används redan. Prova att logga in.' });
     }
     await startSession(req, res, user);
+    if (sendMail) {
+      try {
+        if (!await overLimit(req, 'verify-email', 3, email)) await sendEmailAction(user, 'verify');
+      } catch {
+        console.error('Verifieringsmejlet kunde inte skickas.');
+      }
+    }
     res.status(201).json({ user: publicUser(user) });
   });
 
@@ -164,10 +193,78 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
     res.json({ ok: true });
   });
 
+  app.post('/api/auth/verify/request', requireUser, async (req, res) => {
+    if (!sendMail) return res.status(503).json({ error: EMAIL_UNAVAILABLE });
+    if (req.account.emailVerified) return res.json({ ok: true });
+    if (await overLimit(req, 'verify-ip', 15) ||
+        await overLimit(req, 'verify-email', 3, req.account.email)) return tooManyAttempts(res);
+    try {
+      await sendEmailAction(req.account, 'verify');
+      res.json({ ok: true });
+    } catch {
+      console.error('Verifieringsmejlet kunde inte skickas.');
+      res.status(502).json({ error: 'Mejlet kunde inte skickas. Försök igen om en stund.' });
+    }
+  });
+
+  app.post('/api/auth/verify/confirm', async (req, res) => {
+    const link = readEmailToken(req.body?.token);
+    if (!link) return res.status(400).json({ error: INVALID_LINK });
+    if (await overLimit(req, 'verify-confirm', 20)) return tooManyAttempts(res);
+    if (!await storage.verifyEmail(link.id, link.token)) return res.status(400).json({ error: INVALID_LINK });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/reset/request', async (req, res) => {
+    if (!sendMail) return res.status(503).json({ error: EMAIL_UNAVAILABLE });
+    const email = normalized(req.body?.email).toLowerCase();
+    if (!validEmail(email)) return res.status(400).json({ error: 'Ange en giltig e-postadress.' });
+    if (await overLimit(req, 'reset-ip', 15)) return tooManyAttempts(res);
+    if (!await overLimit(req, 'reset-email', 3, email)) {
+      const user = await storage.getUserByEmail(email);
+      if (user?.emailVerified) {
+        try {
+          await sendEmailAction(user, 'reset');
+        } catch {
+          console.error('Återställningsmejlet kunde inte skickas.');
+        }
+      }
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/reset/confirm', async (req, res) => {
+    const link = readEmailToken(req.body?.token);
+    const password = req.body?.newPassword;
+    if (!link) return res.status(400).json({ error: INVALID_LINK });
+    if (!validPassword(password)) return res.status(400).json({ error: 'Lösenordet måste vara 12–128 tecken.' });
+    if (await overLimit(req, 'reset-confirm', 15)) return tooManyAttempts(res);
+    if (!await storage.resetPassword(link.id, link.token, await hashPassword(password), crypto.randomUUID())) {
+      return res.status(400).json({ error: INVALID_LINK });
+    }
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/auth/account', requireUser, async (req, res) => {
+    if (req.body?.confirmed !== true) return res.status(400).json({ error: 'Bekräfta att kontot ska raderas.' });
+    const password = req.body?.password;
+    if (!validPassword(password)) return res.status(400).json({ error: 'Nuvarande lösenord är fel.' });
+    if (await overLimit(req, ['delete-account', req.account.id], 5)) return tooManyAttempts(res);
+    if (!await passwordMatches(password, req.account.password)) {
+      return res.status(400).json({ error: 'Nuvarande lösenord är fel.' });
+    }
+    if (!await storage.deleteUser(req.account.id, credentialVersion(req.account))) {
+      return res.status(409).json({ error: 'Kontot har ändrats. Logga in igen och försök på nytt.' });
+    }
+    res.clearCookie(SESSION_COOKIE, cookieOptions);
+    res.json({ deleted: true });
+  });
+
   app.patch('/api/auth/profile', requireUser, async (req, res) => {
     const name = normalized(req.body?.name);
     if (!validName(name)) return res.status(400).json({ error: 'Ange ett namn med 2–70 tecken.' });
     const user = await storage.saveName(req.account.id, name);
+    if (!user) return res.status(401).json({ error: 'Kontot är inte längre aktivt.' });
     res.json({ user: publicUser(user) });
   });
 
@@ -194,12 +291,26 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
   app.post('/api/history', requireUser, async (req, res) => {
     const answer = calculateLoan(req.body);
     if (!answer.valid) return res.status(400).json(answer);
-    const item = { id: crypto.randomUUID(), at: new Date().toISOString(), ...answer.data, result: answer.result };
-    await storage.addHistory(req.account.id, item);
+    const title = normalized(req.body?.title);
+    if (title.length > 60) return res.status(400).json({ error: 'Namnet får vara högst 60 tecken.' });
+    const item = { id: crypto.randomUUID(), at: new Date().toISOString(), ...answer.data, title, result: answer.result };
+    if (!await storage.addHistory(req.account.id, item)) {
+      return res.status(401).json({ error: 'Kontot är inte längre aktivt.' });
+    }
     res.status(201).json({ saved: true, item });
   });
+  app.patch('/api/history/:id', requireUser, async (req, res) => {
+    if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Ogiltigt id för sparad beräkning.' });
+    if (typeof req.body?.title !== 'string' || req.body.title.trim().length > 60) {
+      return res.status(400).json({ error: 'Ange ett namn på högst 60 tecken.' });
+    }
+    if (!await storage.renameHistory(req.account.id, req.params.id, req.body.title.trim())) {
+      return res.status(404).json({ error: 'Beräkningen hittades inte på ditt konto.' });
+    }
+    res.json({ ok: true });
+  });
   app.delete('/api/history/:id', requireUser, async (req, res) => {
-    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) {
+    if (!UUID.test(req.params.id)) {
       return res.status(400).json({ error: 'Ogiltigt id för sparad beräkning.' });
     }
     if (!await storage.deleteHistory(req.account.id, req.params.id)) {

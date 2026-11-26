@@ -29,7 +29,9 @@ async function api(url,options={}){
 }
 async function updateNavigation() {
   try {
-    const { user, demo } = await api('/api/auth/me');
+    const { user, demo, emailAvailable } = await api('/api/auth/me');
+    if ($('forgot-password')) $('forgot-password').hidden = !emailAvailable;
+    if ($('email-verification')) $('email-verification').hidden = !emailAvailable;
     const accountLink = $('account-link');
     if (accountLink) accountLink.textContent = user || demo ? 'Mina sidor' : 'Logga in';
     if (demo) {
@@ -179,11 +181,12 @@ function initializeCalculator(){
   $('save-calculation').addEventListener('click', async () => {
     const calculation = lastCalculation;
     if (!calculation || saving) return;
+    const payload = { ...calculation, title: $('scenario-title').value };
     const status = $('save-status');
     saving = true;
     status.textContent = 'Sparar…';
     try {
-      await api('/api/history', { method: 'POST', body: JSON.stringify(calculation) });
+      await api('/api/history', { method: 'POST', body: JSON.stringify(payload) });
       if (lastCalculation === calculation) {
         lastCalculation = null;
         status.textContent = 'Sparad! Du hittar beräkningen under Mina sidor.';
@@ -192,7 +195,7 @@ function initializeCalculator(){
       if (lastCalculation !== calculation) return;
       if (error.status === 401) {
         try {
-          sessionStorage.setItem('spark_pending_save', JSON.stringify(calculation));
+          sessionStorage.setItem('spark_pending_save', JSON.stringify(payload));
           window.location.href = 'account.html?save=1';
           return;
         } catch {
@@ -223,16 +226,138 @@ function initializeAccount(){
       toggle.textContent=show?'Dölj':'Visa';toggle.setAttribute('aria-label',show?'Dölj lösenord':'Visa lösenord');
     });
   }
+  const periodsPerYear = { monthly: 12, quarterly: 4, yearly: 1 };
+  const intervalLabels = { monthly: 'per månad', quarterly: 'per kvartal', yearly: 'per år' };
+  const firstSelect = $('compare-first');
+  const secondSelect = $('compare-second');
+  let scenarios = [];
+
+  function scenarioName(item) {
+    return item.title || fmtMoney.format(item.loanAmount);
+  }
+
+  function renderComparison() {
+    const first = scenarios.find(item => item.id === firstSelect.value);
+    const second = scenarios.find(item => item.id === secondSelect.value);
+    const summary = $('comparison-summary');
+    const table = $('saved-comparison-table');
+    const body = $('saved-comparison-body');
+    body.replaceChildren();
+    table.hidden = !first || !second || first === second;
+    if (table.hidden) {
+      summary.textContent = scenarios.length < 2 ? '' : 'Välj två olika beräkningar.';
+      return;
+    }
+
+    const perYear = item => item.result.perYear ?? periodsPerYear[item.paymentFrequency];
+    const months = item => item.result.periods * (12 / perYear(item));
+    const payment = item => `${fmtMoney.format(item.result.payment)} ${intervalLabels[item.paymentFrequency]}`;
+    const currency = value => fmtMoney.format(value);
+    const signedCurrency = new Intl.NumberFormat('sv-SE', {
+      style: 'currency', currency: 'SEK', signDisplay: 'exceptZero',
+    });
+    const signedNumber = new Intl.NumberFormat('sv-SE', { signDisplay: 'exceptZero' });
+    const interestDelta = (second.result.interest - first.result.interest).toFixed(2);
+    const timeDelta = months(second) - months(first);
+    const paymentDelta = first.paymentFrequency === second.paymentFrequency
+      ? ` · Betalning ${signedCurrency.format((second.result.payment - first.result.payment).toFixed(2))} ${intervalLabels[second.paymentFrequency]}` : '';
+    summary.textContent = `Skillnad i andra beräkningen: ränta ${signedCurrency.format(interestDelta)} · Tid ${signedNumber.format(timeDelta)} mån${paymentDelta}`;
+    $('compare-first-title').textContent = scenarioName(first);
+    $('compare-second-title').textContent = scenarioName(second);
+
+    for (const [label, format] of [
+      ['Studieskuld', item => currency(item.loanAmount)],
+      ['Betalning', payment],
+      ['Total ränta', item => currency(item.result.interest)],
+      ['Återbetalningstid', item => paymentDuration(item.result.periods, perYear(item))],
+      ['Summa betalningar', item => currency(item.result.total)],
+    ]) {
+      const row = document.createElement('tr');
+      const heading = document.createElement('th');
+      heading.scope = 'row';
+      heading.textContent = label;
+      row.append(heading);
+      for (const item of [first, second]) {
+        const cell = document.createElement('td');
+        cell.textContent = format(item);
+        row.append(cell);
+      }
+      body.append(row);
+    }
+  }
+
+  function setComparison(history) {
+    scenarios = history;
+    let firstId = firstSelect.value;
+    let secondId = secondSelect.value;
+    if (!history.some(item => item.id === firstId)) firstId = history[0]?.id;
+    if (!history.some(item => item.id === secondId)) secondId = history.find(item => item.id !== firstId)?.id;
+    for (const [select, id] of [[firstSelect, firstId], [secondSelect, secondId]]) {
+      select.replaceChildren(...history.map(item => {
+        const date = new Date(item.at).toLocaleString('sv-SE');
+        return new Option(`${scenarioName(item)} · ${date}`, item.id, false, item.id === id);
+      }));
+    }
+    $('scenario-compare').hidden = history.length < 2;
+    renderComparison();
+  }
+
+  firstSelect.addEventListener('change', renderComparison);
+  secondSelect.addEventListener('change', renderComparison);
+
+  function renameForm(item, title) {
+    const details = document.createElement('details');
+    details.className = 'history-rename';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Byt namn';
+    const form = document.createElement('form');
+    form.method = 'post';
+    const label = document.createElement('label');
+    label.textContent = 'Namn på beräkningen';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 60;
+    input.value = item.title || '';
+    label.append(input);
+    const button = document.createElement('button');
+    button.type = 'submit';
+    button.className = 'history-action';
+    button.textContent = 'Spara namn';
+    form.append(label, button);
+    details.append(summary, form);
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      button.disabled = true;
+      const name = input.value.trim();
+      try {
+        await api('/api/history/' + encodeURIComponent(item.id), {
+          method: 'PATCH', body: JSON.stringify({ title: name }),
+        });
+        item.title = name;
+        title.textContent = scenarioName(item);
+        setComparison(scenarios);
+        details.open = false;
+        summary.focus();
+        $('history-message').textContent = 'Namnet har sparats.';
+      } catch (error) {
+        $('history-message').textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return details;
+  }
   async function listHistory(){
     const target=$('history');target.textContent='Laddar sparade beräkningar…';
     try{
       const {history}=await api('/api/history');target.replaceChildren();
+      setComparison(history);
       $('history-count').textContent=String(history.length);
       $('last-activity').textContent=history.length?new Date(history[0].at).toLocaleDateString('sv-SE'):'Inga sparade ännu';
       if(!history.length){const x=document.createElement('div');x.className='empty-history';x.textContent='Inga sparade beräkningar ännu. Prova kalkylatorn och välj ”Spara i Mina sidor”.';target.append(x);return;}
       for(const item of history){
         const row=document.createElement('article');row.className='history-item';const left=document.createElement('div'),right=document.createElement('div');right.className='history-meta';
-        const title=document.createElement('strong');title.textContent=fmtMoney.format(item.loanAmount);
+        const title=document.createElement('strong');title.textContent=scenarioName(item);
         const date=document.createElement('span');date.textContent=new Date(item.at).toLocaleString('sv-SE');left.append(title,date);
         const payment=document.createElement('strong');payment.textContent=fmtMoney.format(item.result.payment);
         const interval=document.createElement('span');interval.textContent=({monthly:'Per månad',quarterly:'Per kvartal',yearly:'Per år'})[item.paymentFrequency]+' · förenklad modell';right.append(payment,interval);
@@ -250,7 +375,7 @@ function initializeAccount(){
           try{await api('/api/history/'+encodeURIComponent(item.id),{method:'DELETE',body:'{}'});await listHistory();$('history-message').textContent='Beräkningen har tagits bort.';}
           catch(err){del.disabled=false;$('history-message').textContent=err.message;}
         });
-        actions.append(reuse,del);row.append(left,right,actions);target.append(row);
+        actions.append(reuse,del);row.append(left,right,actions,renameForm(item,title));target.append(row);
       }
     }catch(err){target.textContent=err.message;}
   }
@@ -271,6 +396,10 @@ function initializeAccount(){
     $('user-name').textContent = user.name;
     $('user-email').textContent = user.email;
     $('profile-name').value = user.name;
+    $('email-verification-state').textContent = user.emailVerified
+      ? 'Din e-postadress är verifierad.' : 'Verifiera din e-postadress för att kunna återställa ditt lösenord.';
+    $('verify-request-form').hidden = user.emailVerified;
+    $('verify-request-status').textContent = '';
     $('dashboard-message').textContent = '';
     $('history-message').textContent = '';
     const accountLink = $('account-link');
@@ -297,7 +426,7 @@ function initializeAccount(){
     }catch(err){showMessage(err.message);}
     finally{working(register,false);}
   });
-  function handleSettings(formId, statusId, endpoint, readValues, onSuccess) {
+  function handleSettings(formId, statusId, endpoint, readValues, onSuccess, method = 'PATCH') {
     const form = $(formId);
     const status = $(statusId);
     form.addEventListener('submit', async event => {
@@ -308,7 +437,7 @@ function initializeAccount(){
       button.disabled = true;
       try {
         const body = readValues();
-        onSuccess(await api(endpoint, { method: 'PATCH', body: JSON.stringify(body) }), form, status);
+        await onSuccess(await api(endpoint, { method, body: JSON.stringify(body) }), form, status);
       } catch (error) {
         status.textContent = error.message;
       } finally {
@@ -336,28 +465,105 @@ function initializeAccount(){
     status.textContent = 'Lösenordet har ändrats.';
   });
 
-  $('logout').addEventListener('click',async()=>{
-    const button=$('logout');button.disabled=true;
-    try{
-      await api('/api/auth/logout',{method:'POST',body:'{}'});
-      dashboard.hidden = true;
-      auth.hidden = false;
-      $('password-form').reset();
-      $('profile-status').textContent = '';
-      $('password-status').textContent = '';
-      $('auth-banner').hidden = true;
-      setTab('login');
-      showMessage('Du har loggat ut.', true);
-      $('login-email').focus();
-      await updateNavigation();
+  handleSettings('reset-request-form', 'reset-request-status', '/api/auth/reset/request', () => ({
+    email: $('reset-email').value,
+  }), (_result, form, status) => {
+    form.reset();
+    status.textContent = 'Om adressen tillhör ett verifierat konto får du en återställningslänk.';
+  }, 'POST');
+
+  handleSettings('verify-request-form', 'verify-request-status', '/api/auth/verify/request', () => ({}),
+    (_result, _form, status) => {
+      status.textContent = 'Kolla din inkorg efter verifieringslänken.';
+    }, 'POST');
+
+  async function showSignedOut(text) {
+    dashboard.hidden = true;
+    auth.hidden = false;
+    $('password-form').reset();
+    $('delete-account-form').reset();
+    $('profile-status').textContent = '';
+    $('password-status').textContent = '';
+    $('delete-account-status').textContent = '';
+    $('auth-banner').hidden = true;
+    $('history').replaceChildren();
+    setComparison([]);
+    setTab('login');
+    showMessage(text, true);
+    $('login-email').focus();
+    await updateNavigation();
+  }
+
+  handleSettings('delete-account-form', 'delete-account-status', '/api/auth/account', () => ({
+    password: $('delete-password').value,
+    confirmed: $('delete-confirm').checked,
+  }), async () => {
+    try {
+      sessionStorage.removeItem('spark_pending_save');
+      sessionStorage.removeItem('spark_reuse');
+    } catch {}
+    await showSignedOut('Ditt konto och dina sparade beräkningar har raderats.');
+  }, 'DELETE');
+
+  $('logout').addEventListener('click', async () => {
+    const button = $('logout');
+    button.disabled = true;
+    try {
+      await api('/api/auth/logout', { method: 'POST', body: '{}' });
+      await showSignedOut('Du har loggat ut.');
     } catch (error) {
       $('dashboard-message').textContent = error.message;
+    } finally {
+      button.disabled = false;
     }
-    finally{button.disabled=false;}
   });
   if(location.search.includes('save=1') && $('auth-banner'))$('auth-banner').hidden=false;
   updateNavigation().then(user=>{if(user)showDashboard(user)});
 }
+function initializeEmailAction() {
+  const form = $('email-action-form');
+  const status = $('email-action-status');
+  const params = new URLSearchParams(location.hash.slice(1));
+  const action = params.get('action');
+  const token = params.get('token');
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  if (!token || !['verify', 'reset'].includes(action)) {
+    status.textContent = 'Öppna den senaste länken du fick via e-post.';
+    return;
+  }
+
+  const reset = action === 'reset';
+  const button = $('email-action-submit');
+  $('email-action-title').textContent = reset ? 'Välj ett nytt lösenord' : 'Verifiera din e-post';
+  button.textContent = reset ? 'Spara nytt lösenord' : 'Verifiera e-postadress';
+  $('email-action-password-fields').hidden = !reset;
+  $('reset-password').required = reset;
+  $('reset-password-confirm').required = reset;
+  form.hidden = false;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const newPassword = $('reset-password').value;
+    if (reset && newPassword !== $('reset-password-confirm').value) {
+      status.textContent = 'Lösenorden matchar inte.';
+      $('reset-password-confirm').focus();
+      return;
+    }
+    button.disabled = true;
+    try {
+      await api(`/api/auth/${action}/confirm`, {
+        method: 'POST', body: JSON.stringify({ token, ...(reset ? { newPassword } : {}) }),
+      });
+      form.reset();
+      form.hidden = true;
+      status.textContent = reset ? 'Lösenordet har ändrats. Du kan logga in igen.' : 'Din e-postadress är verifierad.';
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 function initializeChat(){
   const root=$('chat-root');if(!root)return;
   root.innerHTML='<button id="chat-launch" class="chat-launch" aria-controls="chat-panel" aria-expanded="false" type="button">✧ Fråga guiden</button><section class="chat-panel" id="chat-panel" aria-label="Hjälpguide" hidden><div class="chat-head"><div><strong>✧ MittCSN:s guide</strong><small>Enkel frågor-och-svar-guide · AI kommer senare</small></div><button type="button" class="chat-close" id="chat-close" aria-label="Stäng guiden">×</button></div><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-bubble">Hej! Jag kan svara på vanliga frågor om studieskuld, ränta, kalkylatorn och hur du sparar exempel. Jag är ännu inte en AI-chatt.</div></div><form class="chat-input" id="chat-form"><input id="chat-question" aria-label="Din fråga" maxlength="300" placeholder="Fråga om CSN eller kalkylatorn…" required><button type="submit">Skicka</button></form><p class="chat-hint">Skriv inga personnummer eller andra känsliga uppgifter.</p></section>';
@@ -383,4 +589,5 @@ initializeNavigation();
 initializeCalculator();
 initializeChat();
 if ($('login-form')) initializeAccount();
+else if ($('email-action-form')) initializeEmailAction();
 else updateNavigation();

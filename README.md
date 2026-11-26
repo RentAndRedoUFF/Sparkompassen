@@ -14,7 +14,7 @@ npm run dev
 
 - **Hem** (`/`) – varför tjänsten finns, statistik och förklaringar.
 - **Kalkylator** (`/calculator.html`) – förenklad annuitetsmodell med extra betalningar, räntejämförelser och CSV-export.
-- **Mina sidor** (`/account.html`) – registrering, inloggning, sparade beräkningar, kontoinställningar och utloggning.
+- **Mina sidor** (`/account.html`) – kontoinställningar, namngivning och jämförelse av sparade beräkningar, utloggning och kontoradering.
 
 Den lilla frågeguiden är **inte AI**. Riktig AI-integration tillkommer senare.
 
@@ -48,8 +48,24 @@ Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript
 
 - Utan `DATABASE_URL` använder `npm run dev` ditt befintliga lokala register i `backend/data/accounts.json`. Det lokala registret och konton på Vercel har separat historik.
 - Med PostgreSQL ligger konton, historik och sessioner kvar mellan webbinstanser och omstarter. Lösenord hashas med scrypt och sessioner använder HttpOnly-cookies. Lösenordsbyte loggar ut övriga sessioner.
-- E-postadressen används för att logga in. E-postverifiering och lösenordsåterställning via e-post ingår ännu inte.
 - Kör `npm run check` och `npm test` lokalt. För att även köra PostgreSQL-testet, sätt `MITTCSN_TEST_DATABASE_URL` till anslutningssträngen för en separat testdatabas. Testet skapar fiktiva konton.
+
+## Aktivera verifierings- och återställningsmejl
+
+1. Lägg till och verifiera din avsändardomän i [Resend](https://resend.com/docs/dashboard/domains/introduction). Lägg in de DNS-poster Resend visar hos den DNS-leverantör domänen använder.
+2. Lägg in följande tre miljövariabler i Vercel för **Production**. Markera API-nyckeln som känslig.
+
+   | Variabel | Värde |
+   | --- | --- |
+   | `RESEND_API_KEY` | Resend-nyckel med behörighet att skicka e-post |
+   | `MITTCSN_EMAIL_FROM` | En avsändare på den verifierade domänen, till exempel `MittCSN <konto@mittcsn.se>` |
+   | `MITTCSN_BASE_URL` | Sidans publika HTTPS-adress, till exempel `https://mittcsn.vercel.app` |
+
+3. Välj **Redeploy**. Befintliga användare kan skicka en verifieringslänk via **Mina sidor → Kontoinställningar**. Nya användare får ett verifieringsmejl vid registrering.
+
+E-postverifiering behövs för att använda **Glömt lösenord**. Befintliga konton kan logga in direkt och verifiera sin adress från inställningarna. Länkarna kan användas en gång. Verifieringslänkar gäller i 24 timmar och återställningslänkar i 30 minuter. E-postfunktionerna visas när alla tre variablerna är konfigurerade.
+
+Kontoradering kräver lösenord och uttrycklig bekräftelse. Åtgärden tar bort kontot och de sparade beräkningarna från den aktiva databasen och loggar ut samtliga sessioner.
 
 ## Sprint 4.2 – Professionell vidareutveckling
 

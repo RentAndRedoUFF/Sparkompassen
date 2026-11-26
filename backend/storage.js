@@ -55,6 +55,17 @@ function createLocalStorage() {
     return user;
   }
 
+  function consumeEmailAction(id, kind, token, update) {
+    return updateUser(id, user => {
+      const action = user.emailActions?.[kind];
+      if (!action || action.token !== token || action.expires <= Date.now() ||
+          action.version !== credentialVersion(user)) return false;
+      delete user.emailActions[kind];
+      update(user);
+      return true;
+    });
+  }
+
   return {
     getUserByEmail(email) {
       return load().users.find(user => user.email === email);
@@ -77,7 +88,37 @@ function createLocalStorage() {
         if (credentialVersion(user) !== version) return false;
         user.password = password;
         user.credentialVersion = newVersion;
+        delete user.emailActions;
         return true;
+      });
+    },
+    deleteUser(id, version) {
+      const db = load();
+      const index = db.users.findIndex(user => user.id === id && credentialVersion(user) === version);
+      if (index === -1) return false;
+      db.users.splice(index, 1);
+      save(db);
+      for (const [key, session] of sessions) {
+        if (session.id === id) sessions.delete(key);
+      }
+      return true;
+    },
+    saveEmailAction(id, kind, action) {
+      return updateUser(id, user => {
+        if (credentialVersion(user) !== action.version) return false;
+        user.emailActions ??= {};
+        user.emailActions[kind] = action;
+        return true;
+      });
+    },
+    verifyEmail(id, token) {
+      return consumeEmailAction(id, 'verify', token, user => { user.emailVerified = true; });
+    },
+    resetPassword(id, token, password, newVersion) {
+      return consumeEmailAction(id, 'reset', token, user => {
+        user.password = password;
+        user.credentialVersion = newVersion;
+        delete user.emailActions;
       });
     },
     getHistory(id) {
@@ -86,6 +127,14 @@ function createLocalStorage() {
     addHistory(id, item) {
       return updateUser(id, user => {
         user.history = [item, ...(user.history ?? [])].slice(0, MAX_HISTORY);
+        return true;
+      });
+    },
+    renameHistory(id, itemId, title) {
+      return updateUser(id, user => {
+        const item = user.history?.find(entry => entry.id === itemId);
+        if (!item) return false;
+        item.title = title;
         return true;
       });
     },

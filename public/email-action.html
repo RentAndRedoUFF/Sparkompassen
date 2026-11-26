@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>E-post och lösenord | MittCSN</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="container account-page" id="content">
+    <section class="auth-card panel email-action" aria-labelledby="email-action-title">
+      <a class="logo" href="index.html">✳ MittCSN</a>
+      <h1 id="email-action-title">Hantera ditt konto</h1>
+      <form id="email-action-form" method="post" hidden>
+        <div id="email-action-password-fields" hidden>
+          <div class="field">
+            <label for="reset-password">Nytt lösenord</label>
+            <input id="reset-password" type="password" autocomplete="new-password" minlength="12" maxlength="128">
+          </div>
+          <div class="field">
+            <label for="reset-password-confirm">Bekräfta nytt lösenord</label>
+            <input id="reset-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128">
+          </div>
+        </div>
+        <button type="submit" class="button button-dark" id="email-action-submit">Fortsätt</button>
+      </form>
+      <p id="email-action-status" role="status"></p>
+      <a href="account.html" class="link-arrow">Till Mina sidor ↗</a>
+    </section>
+  </main>
+</body>
+</html>
