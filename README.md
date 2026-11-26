@@ -53,7 +53,7 @@ Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript
 ## Aktivera verifierings- och återställningsmejl
 
 1. Skapa en **Email Service** och en **Email Template** i [EmailJS](https://dashboard.emailjs.com/).
-2. Sätt mallens **To Email** till `{{to_email}}`, **Subject** till `{{subject}}` och innehållet till `{{message}}`. Om du gör en egen mall finns även `{{action_url}}` och `{{expires_in}}`. Använd en fast avsändare från din anslutna e-posttjänst.
+2. Kopiera [HTML-mallen för kontomejl](templates/emailjs-account.html) till mallens HTML-redigerare. Sätt **To Email** till `{{to_email}}` och **Subject** till `{{subject}}`. Använd en fast avsändare från din anslutna e-posttjänst. Samma mall används för verifiering och återställning. Om du vill ha ett textmejl kan du använda `{{message}}` som innehåll.
 3. I **Account → Security** aktiverar du API-anrop från serverapplikationer. Kopiera mallens och tjänstens ID samt den publika och den privata nyckeln till Vercel. [EmailJS om serveranrop](https://github.com/emailjs-com/emailjs-nodejs)
 4. Lägg in följande miljövariabler i Vercel för **Production**. Markera den privata nyckeln som känslig och välj sedan **Redeploy**.
 

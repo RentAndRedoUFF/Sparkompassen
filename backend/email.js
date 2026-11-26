@@ -22,6 +22,10 @@ function createMailer({ hosted, env = process.env, fetchImpl = fetch }) {
     url.hash = new URLSearchParams({ action: kind, token }).toString();
     const verify = kind === 'verify';
     const subject = verify ? 'Verifiera din e-post för MittCSN' : 'Återställ lösenordet för MittCSN';
+    const intro = verify
+      ? 'Bekräfta din e-postadress för att kunna återställa lösenordet till ditt konto.'
+      : 'Vi fick en begäran om att återställa ditt lösenord. Följ länken för att välja ett nytt.';
+    const actionLabel = verify ? 'Verifiera e-postadressen' : 'Välj nytt lösenord';
     const expiration = verify ? '24 timmar' : '30 minuter';
     const message = `${subject}\n\n${url}\n\nLänken kan användas en gång och gäller i ${expiration}. Om du inte väntar på det här mejlet kan du ignorera det.`;
     const headers = { 'Content-Type': 'application/json' };
@@ -33,7 +37,15 @@ function createMailer({ hosted, env = process.env, fetchImpl = fetch }) {
         template_id: templateId,
         user_id: publicKey,
         accessToken: privateKey,
-        template_params: { to_email: email, subject, message, action_url: url.href, expires_in: expiration },
+        template_params: {
+          to_email: email,
+          subject,
+          intro,
+          message,
+          action_url: url.href,
+          action_label: actionLabel,
+          expires_in: expiration,
+        },
       };
     } else {
       endpoint = 'https://api.resend.com/emails';

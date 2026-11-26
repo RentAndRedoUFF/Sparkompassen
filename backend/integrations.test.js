@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const { createMailer } = require('./email');
 const { createAiClient } = require('./chat');
 const { createApp } = require('./app');
@@ -26,7 +28,11 @@ test('EmailJS använder projektspecifik mall och servernyckel för båda kontol�
   });
   await send({ email: 'konto@example.test', kind: 'verify', token: 'test-link' });
   await send({ email: 'konto@example.test', kind: 'reset', token: 'test-link' });
+  const template = readFileSync(path.join(__dirname, '../templates/emailjs-account.html'), 'utf8');
+  const placeholders = [...template.matchAll(/{{(\w+)}}/g)].map(match => match[1]);
   for (const { endpoint, payload } of requests) {
+    assert.ok(placeholders.every(name => typeof payload.template_params[name] === 'string'));
+    assert.match(payload.template_params.message, /Länken kan användas en gång/);
     assert.equal(endpoint, 'https://api.emailjs.com/api/v1.0/email/send');
     assert.equal(payload.service_id, 'test-service');
     assert.equal(payload.template_id, 'test-template');
@@ -34,6 +40,9 @@ test('EmailJS använder projektspecifik mall och servernyckel för båda kontol�
     assert.equal(payload.template_params.to_email, 'konto@example.test');
     assert.match(payload.template_params.action_url, /^https:\/\/mittcsn.example\/email-action.html#action=(verify|reset)&token=test-link$/);
   }
+  assert.equal(requests[0].payload.template_params.action_label, 'Verifiera e-postadressen');
+  assert.equal(requests[0].payload.template_params.expires_in, '24 timmar');
+  assert.equal(requests[1].payload.template_params.action_label, 'Välj nytt lösenord');
   assert.equal(requests[1].payload.template_params.expires_in, '30 minuter');
 });
 
