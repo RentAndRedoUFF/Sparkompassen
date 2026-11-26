@@ -42,7 +42,7 @@ Använd en testadress och fiktiva belopp vid provning. MittCSN har ingen kopplin
 3. Välj **Redeploy** efter att du lagt till variabeln. MittCSN skapar sina tre tabeller vid det första databasanslutna anropet. Databasanvändaren behöver därför kunna skapa tabeller och index.
 4. Öppna **Mina sidor** och skapa ett konto med en testadress. Prova att spara en beräkning, ändra visningsnamnet, logga ut och logga in igen.
 
-Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript. Kalkylatorn fungerar utan databas. Kontofunktionerna aktiveras när `DATABASE_URL` finns. Utan variabeln visar webbversionen ett meddelande om att konton är avstängda. Lägg anslutningssträngen i Vercel eller i den lokala `.env`-filen. GitHub-repot är offentligt.
+Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript. Kalkylatorn fungerar utan databas. Vercel använder `DATABASE_URL` i första hand och `POSTGRES_URL` om den första variabeln saknas. Utan en anslutningssträng visar webbversionen ett meddelande om att konton är avstängda. Lägg anslutningssträngen i Vercel eller i den lokala `.env`-filen. GitHub-repot är offentligt.
 
 ### Lagring och testning
 
