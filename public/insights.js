@@ -1,56 +1,114 @@
 'use strict';
-// Pedagogisk jämförelsemodell. Fast ränta/lika stora betalningar; inte CSN:s återbetalningsregler.
-(function(root,factory){
-  const api=factory();
-  if(typeof module==='object' && module.exports)module.exports=api;
-  if(root)root.SparkompassenInsights=api;
-})(typeof window!=='undefined'?window:globalThis,()=>{
-  const rates={monthly:12,quarterly:4,yearly:1};
-  const roundMoney=v=>Math.round((v+Number.EPSILON)*100)/100;
-  function assertInput(data){
-    const amount=Number(data.loanAmount),rate=Number(data.interestRate),years=Number(data.repaymentYears);
-    if(!Number.isFinite(amount)||amount<=0||amount>1e7||!Number.isFinite(rate)||rate<0||rate>100||!Number.isInteger(years)||years<1||years>25||!Object.hasOwn(rates,data.paymentFrequency))throw new RangeError('Ogiltiga beräkningsvärden.');
-    return {amount,rate,years,perYear:rates[data.paymentFrequency]};
-  }
-  function paymentFor(amount,annualRate,years,perYear){
-    const rate=annualRate/100/perYear,n=years*perYear;
-    return rate===0?amount/n:amount*rate/(-Math.expm1(-n*Math.log1p(rate)));
-  }
-  function buildSchedule(data){
-    const {amount,rate,years,perYear}=assertInput(data);
-    const count=years*perYear,periodRate=rate/100/perYear;
-    const regular=paymentFor(amount,rate,years,perYear);
-    let remaining=amount;
-    const yearly=[];
-    const points=[{year:0,balance:amount}];
-    for(let year=1;year<=years;year++){
-      let yearPaid=0,yearInterest=0;
-      for(let part=0;part<perYear;part++){
-        const index=(year-1)*perYear+part;
-        const interest=remaining*periodRate;
-        const payment=index===count-1?remaining+interest:Math.min(regular,remaining+interest);
-        remaining=Math.max(0,remaining+interest-payment);
-        yearPaid+=payment;yearInterest+=interest;
-      }
-      if(year===years)remaining=0;
-      yearly.push({year,paid:roundMoney(yearPaid),interest:roundMoney(yearInterest),balance:roundMoney(remaining)});
-      points.push({year,balance:roundMoney(remaining)});
+
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.SparkompassenInsights = api;
+})(typeof window !== 'undefined' ? window : null, () => {
+  const frequencies = { monthly: 12, quarterly: 4, yearly: 1 };
+  const roundMoney = value => Math.round((value + Number.EPSILON) * 100) / 100;
+
+  function getInputs(data) {
+    const amount = Number(data.loanAmount);
+    const rate = Number(data.interestRate);
+    const years = Number(data.repaymentYears);
+    const extra = Number(data.extraPayment ?? 0);
+    if (!Number.isFinite(amount) || amount < 1 || amount > 1e7 ||
+        !Number.isFinite(rate) || rate < 0 || rate > 100 ||
+        !Number.isInteger(years) || years < 1 || years > 25 ||
+        !Number.isFinite(extra) || extra < 0 || extra > 1e7 ||
+        !Object.hasOwn(frequencies, data.paymentFrequency)) {
+      throw new RangeError('Ogiltiga beräkningsvärden.');
     }
-    return {years,perYear,regular:roundMoney(regular),points,yearly};
+    return { amount, rate, years, extra, perYear: frequencies[data.paymentFrequency] };
   }
-  function compareTerms(data,yearsList=[10,15,20,25]){
-    const {amount,rate,perYear}=assertInput(data);
-    const years=[...new Set([...yearsList,Number(data.repaymentYears)])].filter(v=>Number.isInteger(v)&&v>=1&&v<=25).sort((a,b)=>a-b);
-    return years.map(year=>{
-      const payment=paymentFor(amount,rate,year,perYear);
-      return {years:year,payment:roundMoney(payment),interest:roundMoney(payment*year*perYear-amount),selected:year===Number(data.repaymentYears)};
+
+  function paymentFor(amount, annualRate, years, perYear) {
+    const rate = annualRate / 100 / perYear;
+    const count = years * perYear;
+    return rate === 0 ? amount / count : (amount * (rate / -Math.expm1(-count * Math.log1p(rate))));
+  }
+
+  function buildSchedule(data) {
+    const { amount, rate, years, extra, perYear } = getInputs(data);
+    const scheduledPeriods = years * perYear;
+    const periodicRate = rate / 100 / perYear;
+    const basePayment = paymentFor(amount, rate, years, perYear);
+    const plannedPayment = basePayment + extra;
+    const yearly = [];
+    const points = [{ year: 0, balance: amount }];
+    let balance = amount;
+    let periods = 0;
+    let totalInterest = 0;
+    let finalPayment = 0;
+    let yearPaid = 0;
+    let yearInterest = 0;
+
+    while (periods < scheduledPeriods && balance > 0) {
+      periods++;
+      const interest = balance * periodicRate;
+      const due = balance + interest;
+      const settle = periods === scheduledPeriods || due - plannedPayment < 1e-7;
+      finalPayment = settle ? due : plannedPayment;
+      balance = settle ? 0 : due - finalPayment;
+      totalInterest += interest;
+      yearInterest += interest;
+      yearPaid += finalPayment;
+
+      if (periods % perYear === 0 || balance === 0) {
+        const elapsed = periods / perYear;
+        points.push({ year: elapsed, balance: roundMoney(balance) });
+        yearly.push({
+          year: Math.ceil(elapsed),
+          paid: roundMoney(yearPaid),
+          interest: roundMoney(yearInterest),
+          balance: roundMoney(balance),
+        });
+        yearPaid = 0;
+        yearInterest = 0;
+      }
+    }
+
+    return {
+      years: periods / perYear,
+      perYear,
+      periods,
+      regular: roundMoney(Math.min(plannedPayment, amount * (1 + periodicRate))),
+      finalPayment: roundMoney(finalPayment),
+      interest: roundMoney(totalInterest),
+      total: roundMoney(amount + totalInterest),
+      points,
+      yearly,
+    };
+  }
+
+  function compareTerms(data, yearsList = [10, 15, 20, 25]) {
+    const { years } = getInputs(data);
+    const terms = [...new Set([...yearsList, years])]
+      .filter(year => Number.isInteger(year) && year >= 1 && year <= 25)
+      .sort((a, b) => a - b);
+    return terms.map(term => {
+      const schedule = buildSchedule({ ...data, repaymentYears: term });
+      return { years: term, payment: schedule.regular, interest: schedule.interest, selected: term === years };
     });
   }
-  function csvYearly(schedule){
-    const lines=['År;Inbetalt under året (kr);Ränta under året (kr);Skuld kvar (kr)'];
-    const cell=v=>Number(v).toFixed(2).replace('.',',');
-    for(const row of schedule.yearly)lines.push([row.year,cell(row.paid),cell(row.interest),cell(row.balance)].join(';'));
-    return '\ufeff'+lines.join('\r\n')+'\r\n';
+
+  function compareRates(data) {
+    const { rate } = getInputs(data);
+    return [...new Set([Math.max(0, rate - 1), rate, Math.min(100, rate + 1)])].map(interestRate => {
+      const schedule = buildSchedule({ ...data, interestRate });
+      return { rate: interestRate, payment: schedule.regular, interest: schedule.interest, selected: interestRate === rate };
+    });
   }
-  return {buildSchedule,compareTerms,csvYearly,paymentFor};
+
+  function csvYearly(schedule) {
+    const lines = ['År;Inbetalt under året (kr);Ränta under året (kr);Skuld kvar (kr)'];
+    const cell = value => Number(value).toFixed(2).replace('.', ',');
+    for (const row of schedule.yearly) {
+      lines.push([row.year, cell(row.paid), cell(row.interest), cell(row.balance)].join(';'));
+    }
+    return '\ufeff' + lines.join('\r\n') + '\r\n';
+  }
+
+  return { buildSchedule, compareTerms, compareRates, csvYearly, paymentFor };
 });

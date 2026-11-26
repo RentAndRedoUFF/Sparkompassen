@@ -1,4 +1,4 @@
-# MittCSN – Sprint 4
+# MittCSN
 
 MittCSN är ett skolprojekt i Teknikspecialisering för att förklara studieskuld, ränta och återbetalning.
 
@@ -13,8 +13,8 @@ npm run dev
 Öppna http://localhost:3000. Tre sidor finns nu:
 
 - **Hem** (`/`) – varför tjänsten finns, statistik och förklaringar.
-- **Kalkylator** (`/calculator.html`) – pedagogisk, förenklad annuitetsmodell.
-- **Mina sidor** (`/account.html`) – registrering, inloggning, sparade beräkningar, utloggning.
+- **Kalkylator** (`/calculator.html`) – förenklad annuitetsmodell med extra betalningar, räntejämförelser och CSV-export.
+- **Mina sidor** (`/account.html`) – registrering, inloggning, sparade beräkningar, kontoinställningar och utloggning.
 
 Den lilla frågeguiden är **inte AI**. Riktig AI-integration tillkommer senare.
 
@@ -33,7 +33,23 @@ Starta från projektmappen med `npm install` följt av `npm run dev`. Öppna sed
 3. Logga ut och logga in igen med samma testkonto. Dina sparade beräkningar ska fortfarande synas.
 4. Testa även menyn på en smal mobilskärm med knappen **Öppna menyn**.
 
-Lagra inte riktiga personuppgifter i skolprototypen. Ingen BankID-integration finns. Konton finns lokalt på den dator där servern körs, inte på någon offentlig tjänst.
+Använd en testadress och fiktiva belopp vid provning. MittCSN har ingen koppling till CSN eller BankID.
+
+## Driftsättning på Vercel
+
+1. Importera GitHub-repot med projektroten som **Root Directory**. Projektet har en Express-konfiguration i `vercel.json`.
+2. Anslut en PostgreSQL-databas, till exempel Neon. I **Settings → Environment Variables** lägger du in den poolade anslutningssträngen som `DATABASE_URL` för **Production**. Behåll databasleverantörens TLS-inställningar i anslutningssträngen.
+3. Välj **Redeploy** efter att du lagt till variabeln. MittCSN skapar sina tre tabeller vid det första databasanslutna anropet. Databasanvändaren behöver därför kunna skapa tabeller och index.
+4. Öppna **Mina sidor** och skapa ett konto med en testadress. Prova att spara en beräkning, ändra visningsnamnet, logga ut och logga in igen.
+
+Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript. Kalkylatorn fungerar utan databas. Kontofunktionerna aktiveras när `DATABASE_URL` finns. Utan variabeln visar webbversionen ett meddelande om att konton är avstängda. Lägg anslutningssträngen i Vercel eller i den lokala `.env`-filen. GitHub-repot är offentligt.
+
+### Lagring och testning
+
+- Utan `DATABASE_URL` använder `npm run dev` ditt befintliga lokala register i `backend/data/accounts.json`. Det lokala registret och konton på Vercel har separat historik.
+- Med PostgreSQL ligger konton, historik och sessioner kvar mellan webbinstanser och omstarter. Lösenord hashas med scrypt och sessioner använder HttpOnly-cookies. Lösenordsbyte loggar ut övriga sessioner.
+- E-postadressen används för att logga in. E-postverifiering och lösenordsåterställning via e-post ingår ännu inte.
+- Kör `npm run check` och `npm test` lokalt. För att även köra PostgreSQL-testet, sätt `MITTCSN_TEST_DATABASE_URL` till anslutningssträngen för en separat testdatabas. Testet skapar fiktiva konton.
 
 ## Sprint 4.2 – Professionell vidareutveckling
 
@@ -46,11 +62,3 @@ Lagra inte riktiga personuppgifter i skolprototypen. Ingen BankID-integration fi
 ### Viktigt om modellen
 
 Alla amorterings- och jämförelseberäkningar är **illustrativa**, inte en simulering av CSN:s verkliga återbetalningsregler. CSN:s ränta är rörlig, dag-för-dag-beräknad och det kan tillkomma avgifter och särskilda årsbeloppsregler. Kontrollera alltid uppgifter hos CSN.
-
-### Säkerhet och begränsningar
-
-Kontouppgifter lagras i ett lokalt JSON-register i `backend/data` som inte ska versionshanteras. Lösenord hashkodas med `scrypt`, och sessionsidentifieraren finns i en HttpOnly-cookie. Inloggning är byggd för ett lokalt skolprojekt, **inte** för en publik produktionstjänst. Använd testkonton utan riktiga personuppgifter. Inför extern drift behöver databashantering, sessioner, dataskydd, behörighetstester, tillgänglighet och säkerhetsgranskning förstärkas.
-
-### Testning
-
-Kör `npm install`, `npm run check` och `npm test`. Tester omfattar bland annat kalkylatorns matematik, jämförelser, layoutintegration och serverflöden (inklusive borttagning av egna sparade beräkningar). Full API-testning kräver att Express och Helmet är installerade.

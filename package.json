@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",
-    "check": "node --check backend/app.js && node --check backend/calculator.js && node --check public/app.js && node --check public/validation.js && node --check public/presentation.js && node --check public/insights.js",
+    "check": "node --check app.js && node --check backend/app.js && node --check backend/postgres.js && node --check backend/storage.js && node --check backend/calculator.js && node --check public/app.js && node --check public/validation.js && node --check public/presentation.js && node --check public/insights.js",
     "test": "node --test"
   },
   "engines": {
@@ -15,6 +15,7 @@
   "dependencies": {
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
-    "helmet": "^8.1.0"
+    "helmet": "^8.1.0",
+    "pg": "^8.23.1"
   }
 }

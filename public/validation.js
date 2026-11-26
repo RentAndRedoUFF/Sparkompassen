@@ -11,10 +11,13 @@
   }
 
   function validateNumber(raw, label, options) {
-    if (raw === null || raw === undefined || String(raw).trim() === '') {
+    if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) {
       return { error: `Ange ${label.toLowerCase()}.` };
     }
-    const input = String(raw).trim();
+    if (typeof raw !== 'number' && typeof raw !== 'string') {
+      return { error: `${label} måste vara ett giltigt tal.` };
+    }
+    const input = String(raw).trim().replace(',', '.');
     // Number('') och Number('  ') blir 0 – därför måste tomma fält kontrolleras först.
     const value = Number(input);
     if (!Number.isFinite(value)) {
@@ -42,6 +45,11 @@
       if (outcome.error) errors[field] = outcome.error;
       else clean[field] = outcome.value;
     }
+    const extraPayment = validateNumber(values.extraPayment ?? '0', 'Extra betalning', {
+      min: 0, max: MAX_AMOUNT, unit: 'kr',
+    });
+    if (extraPayment.error) errors.extraPayment = extraPayment.error;
+    else clean.extraPayment = extraPayment.value;
     if (!FREQUENCIES.includes(values.paymentFrequency)) {
       errors.paymentFrequency = 'Välj ett giltigt betalningsintervall.';
     } else {

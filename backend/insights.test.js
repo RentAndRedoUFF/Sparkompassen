@@ -32,3 +32,12 @@ test('CSV innehåller svensk decimalavgränsning och är säkert numeriskt',()=>
   assert(csv.startsWith('\ufeffÅr;'));assert.equal(csv.trim().split('\r\n').length,3);
   assert.match(csv,/2;/);
 });
+
+test('räntejämförelsen håller övriga antaganden fasta och undviker dubblerade räntor', () => {
+  const { compareRates } = require('../public/insights');
+  const data = { loanAmount: 100000, interestRate: 0, repaymentYears: 20, paymentFrequency: 'monthly', extraPayment: 100 };
+  const rows = compareRates(data);
+  assert.deepEqual(rows.map(row => row.rate), [0, 1]);
+  assert.equal(rows[0].selected, true);
+  assert.ok(rows[1].interest > rows[0].interest);
+});

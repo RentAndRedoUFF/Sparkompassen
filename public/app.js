@@ -51,19 +51,38 @@ async function updateNavigation() {
     return null;
   }
 }
+function paymentDuration(periods, perYear) {
+  const months = periods * (12 / perYear);
+  const years = Math.floor(months / 12);
+  const remainder = months % 12;
+  return [years ? `${years} år` : '', remainder ? `${remainder} ${remainder === 1 ? 'månad' : 'månader'}` : '']
+    .filter(Boolean).join(' ');
+}
+
 function renderInsights(data){
   const insights=window.SparkompassenInsights;
   if(!insights)return;
   const input=data.data, result=data.result;
   const schedule=insights.buildSchedule(input), comparisons=insights.compareTerms(input);
   const money=v=>fmtMoney.format(v);
-  const table=$('schedule-body'),compare=$('comparison-body');
-  table.replaceChildren();compare.replaceChildren();
-  for(const row of comparisons){
-    const tr=document.createElement('tr');if(row.selected)tr.className='comparison-selected';
-    for(const value of [row.years+' år',money(row.payment),money(row.interest)]){const td=document.createElement('td');td.textContent=value;tr.append(td)}
-    compare.append(tr);
+  function renderComparison(target, rows, label) {
+    target.replaceChildren();
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      if (row.selected) tr.className = 'comparison-selected';
+      for (const value of [label(row), money(row.payment), money(row.interest)]) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        tr.append(cell);
+      }
+      target.append(tr);
+    }
   }
+  const percent = new Intl.NumberFormat('sv-SE', { maximumFractionDigits: 3 });
+  renderComparison($('comparison-body'), comparisons, row => `${row.years} år`);
+  renderComparison($('rate-comparison-body'), insights.compareRates(input), row => `${percent.format(row.rate)} %`);
+  const table = $('schedule-body');
+  table.replaceChildren();
   const years=schedule.yearly;
   const visible=years.length<=8?years:[...years.slice(0,4),null,...years.slice(-3)];
   for(const row of visible){
@@ -72,7 +91,7 @@ function renderInsights(data){
     else for(const val of [String(row.year),money(row.paid),money(row.interest),money(row.balance)]){const td=document.createElement('td');td.textContent=val;tr.append(td)}
     table.append(tr);
   }
-  $('chart-end-label').textContent='År '+schedule.years;
+  $('chart-end-label').textContent=paymentDuration(schedule.periods, schedule.perYear);
   const svg=$('debt-chart');
   svg.replaceChildren();const ns='http://www.w3.org/2000/svg';
   const add=(tag,attrs,txt)=>{const node=document.createElementNS(ns,tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));if(txt!==undefined)node.textContent=txt;svg.append(node);return node;};
@@ -102,14 +121,16 @@ function renderInsights(data){
     $('insights-status').textContent='Årsöversikten har exporterats till CSV.';
   };
   $('copy-summary').onclick=async()=>{
-    const description=`MittCSN – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nTid: ${input.repaymentYears} år\nBetalning: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nEj officiell CSN-beräkning.`;
+    const description=`MittCSN – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nÅterbetalningstid i modellen: ${paymentDuration(result.periods, result.perYear)}\nExtra per betalning: ${money(input.extraPayment)}\nOrdinarie betalning i modellen: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nEj officiell CSN-beräkning.`;
     try{await navigator.clipboard.writeText(description);$('insights-status').textContent='Sammanfattningen har kopierats.'}
     catch{$('insights-status').textContent='Kunde inte kopiera automatiskt. Du kan läsa uppgifterna i resultatkortet.'}
   };
 }
 function initializeCalculator(){
   const form=$('csn-form');if(!form)return;
-  const fields=['loanAmount','interestRate','repaymentYears','paymentFrequency'];
+  const fields=['loanAmount','interestRate','repaymentYears','paymentFrequency','extraPayment'];
+  let revision = 0;
+  let saving = false;
   function applyPreset(amount){
     form.elements.loanAmount.value=String(amount);
     if(!form.elements.repaymentYears.value)form.elements.repaymentYears.value='20';
@@ -128,43 +149,66 @@ function initializeCalculator(){
   }catch{}
   function values(){return Object.fromEntries(fields.map(k=>[k,form.elements[k].value]))}
   function errors(map={}){for(const k of fields){const el=form.elements[k],err=$(`${k}-error`);if(err)err.textContent=map[k]||'';el.setAttribute('aria-invalid',map[k]?'true':'false')}}
-  function clear(){if($('insights-panel'))$('insights-panel').hidden=true;lastCalculation=null;$('calculation').hidden=true;$('result-placeholder').hidden=false;$('result-label').textContent='VÄNTAR PÅ INDATA';$('result-label').classList.remove('ready');$('form-status').hidden=true;$('save-status').textContent=''}
+  function clear(){revision++;if($('insights-panel'))$('insights-panel').hidden=true;lastCalculation=null;$('calculation').hidden=true;$('result-placeholder').hidden=false;$('result-label').textContent='VÄNTAR PÅ INDATA';$('result-label').classList.remove('ready');$('form-status').hidden=true;$('save-status').textContent=''}
   form.addEventListener('input',()=>{clear();errors()});form.addEventListener('change',()=>{clear();errors()});form.addEventListener('reset',()=>{setTimeout(()=>{clear();errors()},0)});
   form.addEventListener('submit',async event=>{
     event.preventDefault();const input=values();const check=window.SparkompassenValidation.validateLoan(input);errors(check.errors);const alert=$('form-status');clear();
     if(!check.valid){alert.textContent='Kontrollera de markerade fälten.';alert.hidden=false;form.elements[fields.find(k=>check.errors[k])].focus();return}
+    const currentRevision = revision;
     const button=form.querySelector('button[type=submit]');button.disabled=true;
     try{
       const data=await api('/api/calculate',{method:'POST',body:JSON.stringify(check.data)});
+      if (currentRevision !== revision) return;
       lastCalculation=data.data;
       $('payment-value').textContent=fmtMoney.format(data.result.payment);
       $('payment-frequency').textContent=({monthly:'Per månad',quarterly:'Per kvartal',yearly:'Per år'})[data.data.paymentFrequency];
       $('principal-value').textContent=fmtMoney.format(data.data.loanAmount);
       $('interest-value').textContent=fmtMoney.format(data.result.interest);
       $('total-value').textContent=fmtMoney.format(data.result.total);
-      $('periods-value').textContent=fmtNumber.format(data.result.periods);
+      const { periods, perYear, finalPayment, periodsSaved, interestSaved } = data.result;
+      $('periods-value').textContent = `${fmtNumber.format(periods)} · ${paymentDuration(periods, perYear)}`;
+      const impact = $('extra-impact');
+      impact.hidden = data.data.extraPayment === 0;
+      impact.textContent = `Med extra betalningar sparar du ${fmtMoney.format(interestSaved)} i ränta och betalar ${periodsSaved} gånger färre jämfört med grundplanen. Sista betalningen blir ${fmtMoney.format(finalPayment)}.`;
       $('result-label').textContent='BERÄKNING KLAR';$('result-label').classList.add('ready');
       $('result-placeholder').hidden=true;$('calculation').hidden=false;renderInsights(data);
       if(window.innerWidth<950)$('result-panel').scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
-    }catch(err){alert.textContent=err.message;alert.hidden=false}
+    }catch(err){if(currentRevision===revision){alert.textContent=err.message;alert.hidden=false}}
     finally{button.disabled=false}
   });
-  $('save-calculation').addEventListener('click',async()=>{
-    if(!lastCalculation)return;const status=$('save-status');status.textContent='Sparar…';
-    try{await api('/api/history',{method:'POST',body:JSON.stringify(lastCalculation)});status.textContent='Sparad! Du hittar beräkningen under Mina sidor.'}
-    catch(err){
-      if(err.status===401){try{sessionStorage.setItem('spark_pending_save',JSON.stringify(lastCalculation));}catch{}
-        status.textContent='Logga in för att spara din beräkning. Du skickas vidare till Mina sidor.';
-        window.location.href='account.html?save=1';return;
+  $('save-calculation').addEventListener('click', async () => {
+    const calculation = lastCalculation;
+    if (!calculation || saving) return;
+    const status = $('save-status');
+    saving = true;
+    status.textContent = 'Sparar…';
+    try {
+      await api('/api/history', { method: 'POST', body: JSON.stringify(calculation) });
+      if (lastCalculation === calculation) {
+        lastCalculation = null;
+        status.textContent = 'Sparad! Du hittar beräkningen under Mina sidor.';
       }
-      status.textContent=err.message;
+    } catch (error) {
+      if (lastCalculation !== calculation) return;
+      if (error.status === 401) {
+        try {
+          sessionStorage.setItem('spark_pending_save', JSON.stringify(calculation));
+          window.location.href = 'account.html?save=1';
+          return;
+        } catch {
+          status.textContent = 'Logga in på Mina sidor och gör sedan beräkningen igen.';
+          return;
+        }
+      }
+      status.textContent = error.message;
+    } finally {
+      saving = false;
     }
   });
 }
 function initializeAccount(){
   const login=$('login-form');if(!login)return;
   const register=$('register-form'),auth=$('auth-area'),dashboard=$('dashboard'),message=$('auth-message');
-  let activeUser=null;
   function showMessage(text,success=false){message.textContent=text||'';message.classList.toggle('success',success);}
   function setTab(which){
     const isLogin=which==='login';login.hidden=!isLogin;register.hidden=isLogin;
@@ -195,7 +239,7 @@ function initializeAccount(){
         const actions=document.createElement('div');actions.className='history-actions';
         const reuse=document.createElement('button');reuse.type='button';reuse.className='history-action';reuse.textContent='Använd igen ↗';
         reuse.addEventListener('click',()=>{
-          try{sessionStorage.setItem('spark_reuse',JSON.stringify({loanAmount:item.loanAmount,interestRate:item.interestRate,repaymentYears:item.repaymentYears,paymentFrequency:item.paymentFrequency}));
+          try{sessionStorage.setItem('spark_reuse',JSON.stringify({loanAmount:item.loanAmount,interestRate:item.interestRate,repaymentYears:item.repaymentYears,paymentFrequency:item.paymentFrequency,extraPayment:item.extraPayment ?? 0}));
             location.href='calculator.html';}
           catch{$('history-message').textContent='Det gick inte att öppna exemplet.';}
         });
@@ -216,12 +260,23 @@ function initializeAccount(){
     try{
       const data=JSON.parse(raw);await api('/api/history',{method:'POST',body:JSON.stringify(data)});
       sessionStorage.removeItem('spark_pending_save');
-      const banner=$('auth-banner');if(banner){banner.hidden=false;banner.textContent='✓ Din tidigare beräkning har sparats på kontot.';}
-    }catch(err){const banner=$('auth-banner');if(banner){banner.hidden=false;banner.textContent='Kunde inte spara den tidigare beräkningen: '+err.message;}}
+      $('history-message').textContent = 'Din beräkning har sparats på kontot.';
+    } catch (error) {
+      $('history-message').textContent = 'Kunde inte spara din beräkning. ' + error.message;
+    }
   }
   async function showDashboard(user){
-    activeUser=user;auth.hidden=true;dashboard.hidden=false;$('user-name').textContent=user.name;$('user-email').textContent=user.email;
-    await savePending();await listHistory();await updateNavigation();
+    auth.hidden = true;
+    dashboard.hidden = false;
+    $('user-name').textContent = user.name;
+    $('user-email').textContent = user.email;
+    $('profile-name').value = user.name;
+    $('dashboard-message').textContent = '';
+    $('history-message').textContent = '';
+    const accountLink = $('account-link');
+    if (accountLink) accountLink.textContent = 'Mina sidor';
+    await savePending();
+    await listHistory();
   }
   function working(form,yes){const button=form.querySelector('[type=submit]');button.disabled=yes;button.textContent=yes?'Arbetar…':(form===login?'Logga in ↗':'Skapa konto ↗');}
   login.addEventListener('submit',async event=>{
@@ -242,13 +297,62 @@ function initializeAccount(){
     }catch(err){showMessage(err.message);}
     finally{working(register,false);}
   });
+  function handleSettings(formId, statusId, endpoint, readValues, onSuccess) {
+    const form = $(formId);
+    const status = $(statusId);
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      if (button.disabled) return;
+      status.textContent = '';
+      button.disabled = true;
+      try {
+        const body = readValues();
+        onSuccess(await api(endpoint, { method: 'PATCH', body: JSON.stringify(body) }), form, status);
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  handleSettings('profile-form', 'profile-status', '/api/auth/profile', () => ({
+    name: $('profile-name').value,
+  }), ({ user }, _form, status) => {
+    $('user-name').textContent = user.name;
+    $('profile-name').value = user.name;
+    status.textContent = 'Visningsnamnet har sparats.';
+  });
+  handleSettings('password-form', 'password-status', '/api/auth/password', () => {
+    const newPassword = $('new-password').value;
+    if (newPassword !== $('new-password-confirm').value) {
+      $('new-password-confirm').focus();
+      throw new Error('De nya lösenorden matchar inte.');
+    }
+    return { currentPassword: $('current-password').value, newPassword };
+  }, (_result, form, status) => {
+    form.reset();
+    status.textContent = 'Lösenordet har ändrats.';
+  });
+
   $('logout').addEventListener('click',async()=>{
     const button=$('logout');button.disabled=true;
     try{
       await api('/api/auth/logout',{method:'POST',body:'{}'});
-      activeUser=null;dashboard.hidden=true;auth.hidden=false;setTab('login');showMessage('Du har loggat ut.',true);
+      dashboard.hidden = true;
+      auth.hidden = false;
+      $('password-form').reset();
+      $('profile-status').textContent = '';
+      $('password-status').textContent = '';
+      $('auth-banner').hidden = true;
+      setTab('login');
+      showMessage('Du har loggat ut.', true);
+      $('login-email').focus();
       await updateNavigation();
-    }catch(err){showMessage(err.message);}
+    } catch (error) {
+      $('dashboard-message').textContent = error.message;
+    }
     finally{button.disabled=false;}
   });
   if(location.search.includes('save=1') && $('auth-banner'))$('auth-banner').hidden=false;
@@ -269,7 +373,7 @@ function initializeChat(){
     const q=question.toLocaleLowerCase('sv-SE');let answer;
     if(/ränta|ranta/.test(q))answer='CSN:s ränta för 2026 är 2,135 %. Den kan ändras från år till år. Källa: csn.se.';
     else if(/spara|konto|logga|inlogg/.test(q))answer='Öppna Mina sidor och skapa ett konto eller logga in. Efter en beräkning kan du välja ”Spara i Mina sidor”.';
-    else if(/beräk|berak|kalkyl|betal|annuitet/.test(q))answer='Kalkylatorn använder en förenklad annuitetsmodell med fast ränta och lika stora betalningar. Det är inte CSN:s officiella årsbelopp.';
+    else if(/beräk|berak|kalkyl|betal|annuitet/.test(q))answer='Kalkylatorn använder en förenklad annuitetsmodell med fast ränta och ett planerat betalningsbelopp. Det är inte CSN:s officiella årsbelopp.';
     else if(/csn|studie|skuld/.test(q))answer='CSN erbjuder studiestöd. Återbetalningen styrs av särskilda regler och kan skilja sig från en vanlig banklånekalkyl. Läs mer på csn.se.';
     else answer='Jag kan än så länge hjälpa dig med CSN, ränta, kalkylatorn och hur sparade beräkningar fungerar. Den framtida AI-funktionen är inte ansluten.';
     bubble(answer);input.value='';messages.scrollTop=messages.scrollHeight;

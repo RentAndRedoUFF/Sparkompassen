@@ -1,17 +1,30 @@
 'use strict';
+
 const { validateLoan } = require('../public/validation');
-const PERIODS = {monthly: 12, quarterly: 4, yearly: 1};
+const { buildSchedule } = require('../public/insights');
+
 function calculateLoan(input) {
-  const checked = validateLoan(input || {});
-  if (!checked.valid) return {valid:false, errors:checked.errors};
-  const {loanAmount, interestRate, repaymentYears, paymentFrequency}=checked.data;
-  const perYear=PERIODS[paymentFrequency];
-  const n=repaymentYears * perYear;
-  const rate=interestRate/100/perYear;
-  // Förenklad annuitetsmodell, ingen prognos över CSN:s årsbelopp eller ränteändringar.
-  const payment=rate===0 ? loanAmount/n : loanAmount*rate/(1-Math.pow(1+rate,-n));
-  const total=payment*n;
-  const result={payment:Math.round(payment*100)/100,total:Math.round(total*100)/100,interest:Math.round((total-loanAmount)*100)/100, periods:n,perYear};
-  return {valid:true, data:checked.data, result, model:'förenklad-annuitet', notice:'Illustrativ beräkning med fast ränta och lika stora betalningar. CSN beräknar årsbelopp enligt särskilda regler och räntan kan ändras.'};
+  const { valid, errors, data } = validateLoan(input ?? {});
+  if (!valid) return { valid, errors };
+
+  const schedule = buildSchedule(data);
+  const baseline = data.extraPayment === 0 ? schedule : buildSchedule({ ...data, extraPayment: 0 });
+  return {
+    valid,
+    data,
+    result: {
+      payment: schedule.regular,
+      total: schedule.total,
+      interest: schedule.interest,
+      periods: schedule.periods,
+      perYear: schedule.perYear,
+      finalPayment: schedule.finalPayment,
+      periodsSaved: baseline.periods - schedule.periods,
+      interestSaved: Math.max(0, Math.round((baseline.interest - schedule.interest) * 100) / 100),
+    },
+    model: 'förenklad-annuitet',
+    notice: 'Illustrativ beräkning med fast ränta. CSN beräknar årsbelopp enligt särskilda regler och räntan kan ändras.',
+  };
 }
-module.exports={calculateLoan};
+
+module.exports = { calculateLoan };
