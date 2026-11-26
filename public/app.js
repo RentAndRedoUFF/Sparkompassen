@@ -65,14 +65,15 @@ function renderInsights(data){
   const insights=window.SparkompassenInsights;
   if(!insights)return;
   const input=data.data, result=data.result;
-  const schedule=insights.buildSchedule(input), comparisons=insights.compareTerms(input);
+  const schedule = insights.buildSchedule(input);
+  const baseline = input.extraPayment > 0 ? insights.buildSchedule({ ...input, extraPayment: 0 }) : null;
   const money=v=>fmtMoney.format(v);
   function renderComparison(target, rows, label) {
     target.replaceChildren();
     for (const row of rows) {
       const tr = document.createElement('tr');
       if (row.selected) tr.className = 'comparison-selected';
-      for (const value of [label(row), money(row.payment), money(row.interest)]) {
+      for (const value of [label(row), money(row.payment), money(row.interest), money(row.total)]) {
         const cell = document.createElement('td');
         cell.textContent = value;
         tr.append(cell);
@@ -81,40 +82,76 @@ function renderInsights(data){
     }
   }
   const percent = new Intl.NumberFormat('sv-SE', { maximumFractionDigits: 3 });
-  renderComparison($('comparison-body'), comparisons, row => `${row.years} år`);
-  renderComparison($('rate-comparison-body'), insights.compareRates(input), row => `${percent.format(row.rate)} %`);
-  const table = $('schedule-body');
-  table.replaceChildren();
-  const years=schedule.yearly;
-  const visible=years.length<=8?years:[...years.slice(0,4),null,...years.slice(-3)];
-  for(const row of visible){
-    const tr=document.createElement('tr');
-    if(!row){const td=document.createElement('td');td.colSpan=4;td.className='schedule-ellipsis';td.textContent='⋯ Fler år finns i CSV-filen';tr.append(td)}
-    else for(const val of [String(row.year),money(row.paid),money(row.interest),money(row.balance)]){const td=document.createElement('td');td.textContent=val;tr.append(td)}
-    table.append(tr);
+  renderComparison($('comparison-body'), insights.compareTerms(input), row => `${row.years} år`);
+  const rateStep = $('rate-step');
+  function renderRates() {
+    renderComparison($('rate-comparison-body'), insights.compareRates(input, Number(rateStep.value)),
+      row => `${percent.format(row.rate)} %`);
   }
-  $('chart-end-label').textContent=paymentDuration(schedule.periods, schedule.perYear);
+  rateStep.onchange = renderRates;
+  renderRates();
+
+  const table = $('schedule-body');
+  const toggleYears = $('show-all-years');
+  const years = schedule.yearly;
+  function renderYears(showAll) {
+    toggleYears.hidden = years.length <= 8;
+    toggleYears.setAttribute('aria-expanded', String(showAll));
+    toggleYears.textContent = showAll ? 'Visa färre år' : 'Visa alla år';
+    table.replaceChildren();
+    const visible = showAll || years.length <= 8 ? years : [...years.slice(0, 4), null, ...years.slice(-3)];
+    for (const row of visible) {
+      const tr = document.createElement('tr');
+      if (!row) {
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        cell.className = 'schedule-ellipsis';
+        cell.textContent = '⋯ Fler år finns under Visa alla år';
+        tr.append(cell);
+      } else {
+        for (const value of [String(row.year), money(row.paid), money(row.interest), money(row.fee), money(row.balance)]) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          tr.append(cell);
+        }
+      }
+      table.append(tr);
+    }
+  }
+  toggleYears.onclick = () => renderYears(toggleYears.getAttribute('aria-expanded') !== 'true');
+  renderYears(false);
+  const chartEnd = baseline ?? schedule;
+  $('chart-end-label').textContent = paymentDuration(chartEnd.periods, chartEnd.perYear);
+  $('chart-baseline-legend').hidden = !baseline;
   const svg=$('debt-chart');
   svg.replaceChildren();const ns='http://www.w3.org/2000/svg';
   const add=(tag,attrs,txt)=>{const node=document.createElementNS(ns,tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));if(txt!==undefined)node.textContent=txt;svg.append(node);return node;};
-  const max=Math.max(1,Number(input.loanAmount)),pad=24,w=575,h=184,baseline=216;
+  const max=Math.max(1,Number(input.loanAmount)),pad=24,w=575,h=184,axis=216;
   for(let i=0;i<=4;i++){
-    const y=baseline-i*h/4;add('line',{x1:pad,y1:y,x2:pad+w,y2:y,stroke:'#dbe6e1','stroke-width':1,'stroke-dasharray':i?'4 5':'0'});
+    const y=axis-i*h/4;add('line',{x1:pad,y1:y,x2:pad+w,y2:y,stroke:'#dbe6e1','stroke-width':1,'stroke-dasharray':i?'4 5':'0'});
     add('text',{x:pad+3,y:y-6,fill:'#698077','font-size':11},new Intl.NumberFormat('sv-SE',{maximumFractionDigits:0}).format(max*i/4)+' kr');
   }
-  const pts=schedule.points.map(pt=>[pad+w*(pt.year/schedule.years),baseline-h*pt.balance/max]);
-  const line=pts.map(([x,y],i)=>(i?'L':'M')+x.toFixed(2)+','+y.toFixed(2)).join(' ');
-  add('path',{d:line+` L${pad+w},${baseline} L${pad},${baseline} Z`,fill:'#d9f4e6'});
+  const plot = plan => plan.points.map(point => [pad + w * (point.year / chartEnd.years), axis - h * point.balance / max]);
+  const pathLine = points => points.map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const pts = plot(schedule);
+  const line = pathLine(pts);
+  add('path', { d: line + ` L${pts.at(-1)[0]},${axis} L${pad},${axis} Z`, fill: '#d9f4e6' });
+  if (baseline) add('path', { d: pathLine(plot(baseline)), stroke: '#607581', 'stroke-width': 2, 'stroke-dasharray': '6 6', fill: 'none' });
   add('path',{d:line,stroke:'#168b72','stroke-width':3.5,fill:'none','stroke-linecap':'round','stroke-linejoin':'round'});
   add('circle',{cx:pts[0][0],cy:pts[0][1],r:5.5,fill:'#168b72',stroke:'white','stroke-width':2});
   add('circle',{cx:pts.at(-1)[0],cy:pts.at(-1)[1],r:5.5,fill:'#168b72',stroke:'white','stroke-width':2});
-  const total=Math.max(.01,result.total),principal=Number(input.loanAmount),interest=Math.max(0,result.interest);
-  $('payment-breakdown').setAttribute('aria-label','Studieskuld '+money(principal)+' och ränta '+money(interest));
-  const part=Math.min(100,Math.max(0,principal/total*100));
-  $('payment-breakdown').querySelector('.breakdown-principal').style.width=part+'%';
-  $('payment-breakdown').querySelector('.breakdown-interest').style.width=(100-part)+'%';
-  $('breakdown-principal-value').textContent=money(principal);
-  $('breakdown-interest-value').textContent=money(interest);
+  const principal = Number(input.loanAmount);
+  const interest = result.interest;
+  const fees = result.fees;
+  const breakdown = $('payment-breakdown');
+  breakdown.setAttribute('aria-label', `Studieskuld ${money(principal)}, ränta ${money(interest)} och avgifter ${money(fees)}`);
+  const allocation = { principal, interest, fees };
+  const total = principal + interest + fees;
+  for (const [part, value] of Object.entries(allocation)) {
+    breakdown.querySelector('.breakdown-' + part).style.width = value / total * 100 + '%';
+    $('breakdown-' + part + '-value').textContent = money(value);
+  }
+  $('breakdown-fees-legend').hidden = fees === 0;
   $('insights-panel').hidden=false;
   $('insights-status').textContent='';
   $('download-csv').onclick=()=>{
@@ -123,14 +160,14 @@ function renderInsights(data){
     $('insights-status').textContent='Årsöversikten har exporterats till CSV.';
   };
   $('copy-summary').onclick=async()=>{
-    const description=`MittCSN – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nÅterbetalningstid i modellen: ${paymentDuration(result.periods, result.perYear)}\nExtra per betalning: ${money(input.extraPayment)}\nOrdinarie betalning i modellen: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nEj officiell CSN-beräkning.`;
+    const description=`MittCSN – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nÅterbetalningstid i modellen: ${paymentDuration(result.periods, result.perYear)}\nExtra per betalning: ${money(input.extraPayment)}\nOrdinarie betalning i modellen: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nTotala avgifter: ${money(result.fees)}\nTotalt: ${money(result.total)}\nEj officiell CSN-beräkning.`;
     try{await navigator.clipboard.writeText(description);$('insights-status').textContent='Sammanfattningen har kopierats.'}
     catch{$('insights-status').textContent='Kunde inte kopiera automatiskt. Du kan läsa uppgifterna i resultatkortet.'}
   };
 }
 function initializeCalculator(){
   const form=$('csn-form');if(!form)return;
-  const fields=['loanAmount','interestRate','repaymentYears','paymentFrequency','extraPayment'];
+  const fields=['loanAmount','interestRate','repaymentYears','paymentFrequency','extraPayment','annualFee'];
   let revision = 0;
   let saving = false;
   function applyPreset(amount){
@@ -144,6 +181,7 @@ function initializeCalculator(){
   if(['100000','250000','400000'].includes(example)){
     form.elements.loanAmount.value=example;
     form.elements.repaymentYears.value='20';
+    if (new URLSearchParams(location.search).get('extra') === '500') form.elements.extraPayment.value = '500';
   }
   try{
     const reuse=sessionStorage.getItem('spark_reuse');
@@ -167,11 +205,12 @@ function initializeCalculator(){
       $('principal-value').textContent=fmtMoney.format(data.data.loanAmount);
       $('interest-value').textContent=fmtMoney.format(data.result.interest);
       $('total-value').textContent=fmtMoney.format(data.result.total);
+      $('fee-value').textContent=fmtMoney.format(data.result.fees);
       const { periods, perYear, finalPayment, periodsSaved, interestSaved } = data.result;
       $('periods-value').textContent = `${fmtNumber.format(periods)} · ${paymentDuration(periods, perYear)}`;
       const impact = $('extra-impact');
       impact.hidden = data.data.extraPayment === 0;
-      impact.textContent = `Med extra betalningar sparar du ${fmtMoney.format(interestSaved)} i ränta och betalar ${periodsSaved} gånger färre jämfört med grundplanen. Sista betalningen blir ${fmtMoney.format(finalPayment)}.`;
+      impact.textContent = `Med extra betalningar sparar du ${fmtMoney.format(interestSaved)} i ränta och betalar ${periodsSaved} gånger färre jämfört med grundplanen. Totalt sparar du ${fmtMoney.format(data.result.totalSaved)} inklusive avgifter. Sista betalningen före eventuell årsavgift blir ${fmtMoney.format(finalPayment)}.`;
       $('result-label').textContent='BERÄKNING KLAR';$('result-label').classList.add('ready');
       $('result-placeholder').hidden=true;$('calculation').hidden=false;renderInsights(data);
       if(window.innerWidth<950)$('result-panel').scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
@@ -267,8 +306,9 @@ function initializeAccount(){
 
     for (const [label, format] of [
       ['Studieskuld', item => currency(item.loanAmount)],
-      ['Betalning', payment],
+      ['Betalning före årsavgift', payment],
       ['Total ränta', item => currency(item.result.interest)],
+      ['Totala avgifter', item => currency(item.result.fees ?? 0)],
       ['Återbetalningstid', item => paymentDuration(item.result.periods, perYear(item))],
       ['Summa betalningar', item => currency(item.result.total)],
     ]) {
@@ -364,7 +404,7 @@ function initializeAccount(){
         const actions=document.createElement('div');actions.className='history-actions';
         const reuse=document.createElement('button');reuse.type='button';reuse.className='history-action';reuse.textContent='Använd igen ↗';
         reuse.addEventListener('click',()=>{
-          try{sessionStorage.setItem('spark_reuse',JSON.stringify({loanAmount:item.loanAmount,interestRate:item.interestRate,repaymentYears:item.repaymentYears,paymentFrequency:item.paymentFrequency,extraPayment:item.extraPayment ?? 0}));
+          try{sessionStorage.setItem('spark_reuse',JSON.stringify({loanAmount:item.loanAmount,interestRate:item.interestRate,repaymentYears:item.repaymentYears,paymentFrequency:item.paymentFrequency,extraPayment:item.extraPayment ?? 0,annualFee:item.annualFee ?? 0}));
             location.href='calculator.html';}
           catch{$('history-message').textContent='Det gick inte att öppna exemplet.';}
         });
@@ -564,29 +604,121 @@ function initializeEmailAction() {
   });
 }
 
-function initializeChat(){
-  const root=$('chat-root');if(!root)return;
-  root.innerHTML='<button id="chat-launch" class="chat-launch" aria-controls="chat-panel" aria-expanded="false" type="button">✧ Fråga guiden</button><section class="chat-panel" id="chat-panel" aria-label="Hjälpguide" hidden><div class="chat-head"><div><strong>✧ MittCSN:s guide</strong><small>Enkel frågor-och-svar-guide · AI kommer senare</small></div><button type="button" class="chat-close" id="chat-close" aria-label="Stäng guiden">×</button></div><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-bubble">Hej! Jag kan svara på vanliga frågor om studieskuld, ränta, kalkylatorn och hur du sparar exempel. Jag är ännu inte en AI-chatt.</div></div><form class="chat-input" id="chat-form"><input id="chat-question" aria-label="Din fråga" maxlength="300" placeholder="Fråga om CSN eller kalkylatorn…" required><button type="submit">Skicka</button></form><p class="chat-hint">Skriv inga personnummer eller andra känsliga uppgifter.</p></section>';
-  const quick=document.createElement('div');quick.className='chat-suggestions';
-  for(const text of ['Hur räknar ni?','Behöver jag konto?','Vad är CSN-räntan?']){
-    const b=document.createElement('button');b.type='button';b.textContent=text;
-    b.addEventListener('click',()=>{const input=$('chat-question');input.value=text;$('chat-form').requestSubmit()});quick.append(b);
+function initializeHomePreview() {
+  const panel = $('home-preview');
+  const insights = window.SparkompassenInsights;
+  if (!panel || !insights) return;
+
+  const controls = [...panel.querySelectorAll('[data-preview-extra]')];
+  function render(extraPayment) {
+    const plan = insights.buildSchedule({
+      loanAmount: 250000, interestRate: 2.135, repaymentYears: 20,
+      paymentFrequency: 'monthly', extraPayment,
+    });
+    $('preview-payment').textContent = fmtMoney.format(plan.regular);
+    $('preview-interest').textContent = fmtMoney.format(plan.interest);
+    $('preview-duration').textContent = paymentDuration(plan.periods, plan.perYear);
+    $('preview-calculator').href = 'calculator.html?example=250000' + (extraPayment > 0 ? '&extra=500' : '');
+    for (const button of controls) button.setAttribute('aria-pressed', String(Number(button.dataset.previewExtra) === extraPayment));
   }
-  $('chat-messages').after(quick);
-  const panel=$('chat-panel'),launch=$('chat-launch');function toggle(show){panel.hidden=!show;launch.setAttribute('aria-expanded',String(show));if(show)$('chat-question').focus()}
-  launch.addEventListener('click',()=>toggle(panel.hidden));$('chat-close').addEventListener('click',()=>toggle(false));
-  $('chat-form').addEventListener('submit',event=>{event.preventDefault();const input=$('chat-question'),question=input.value.trim();if(!question)return;const messages=$('chat-messages');function bubble(t,mine=false){const d=document.createElement('div');d.className='chat-bubble'+(mine?' mine':'');d.textContent=t;messages.append(d)}bubble(question,true);
-    const q=question.toLocaleLowerCase('sv-SE');let answer;
-    if(/ränta|ranta/.test(q))answer='CSN:s ränta för 2026 är 2,135 %. Den kan ändras från år till år. Källa: csn.se.';
-    else if(/spara|konto|logga|inlogg/.test(q))answer='Öppna Mina sidor och skapa ett konto eller logga in. Efter en beräkning kan du välja ”Spara i Mina sidor”.';
-    else if(/beräk|berak|kalkyl|betal|annuitet/.test(q))answer='Kalkylatorn använder en förenklad annuitetsmodell med fast ränta och ett planerat betalningsbelopp. Det är inte CSN:s officiella årsbelopp.';
-    else if(/csn|studie|skuld/.test(q))answer='CSN erbjuder studiestöd. Återbetalningen styrs av särskilda regler och kan skilja sig från en vanlig banklånekalkyl. Läs mer på csn.se.';
-    else answer='Jag kan än så länge hjälpa dig med CSN, ränta, kalkylatorn och hur sparade beräkningar fungerar. Den framtida AI-funktionen är inte ansluten.';
-    bubble(answer);input.value='';messages.scrollTop=messages.scrollHeight;
+  controls.forEach(button => button.addEventListener('click', () => render(Number(button.dataset.previewExtra))));
+  render(0);
+  panel.querySelector('.preview-controls').hidden = false;
+}
+
+function initializeChat() {
+  const root = $('chat-root');
+  if (!root) return;
+  root.innerHTML = `
+    <button id="chat-launch" class="chat-launch" aria-controls="chat-panel" aria-expanded="false" type="button">✧ Fråga guiden</button>
+    <section class="chat-panel" id="chat-panel" aria-labelledby="chat-title" hidden>
+      <div class="chat-head"><div><strong id="chat-title">MittCSN:s studieguide</strong><small>En fråga i taget</small></div>
+        <button type="button" class="chat-close" id="chat-close" aria-label="Stäng guiden">×</button>
+      </div>
+      <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Frågor och svar">
+        <div class="chat-bubble">Fråga om exempelvis ränta, avgifter eller hur du använder kalkylatorn.</div>
+      </div>
+      <div class="chat-suggestions" id="chat-suggestions" aria-label="Exempelfrågor"></div>
+      <form id="chat-form">
+        <div class="chat-input"><input id="chat-question" aria-label="Din fråga" aria-describedby="chat-privacy" maxlength="300" placeholder="Ställ en fråga…" required><button type="submit">Skicka</button></div>
+        <label id="chat-ai-option" class="chat-ai-option" hidden><input id="chat-use-ai" type="checkbox"> Skicka frågan till OpenAI för AI-svar</label>
+      </form>
+      <p class="chat-hint" id="chat-privacy">Använd exempel. Skriv inga personnummer, mejladresser eller lösenord. <a href="https://www.csn.se/" rel="noopener noreferrer" target="_blank">Officiell information hos CSN</a></p>
+    </section>`;
+  const panel = $('chat-panel');
+  const launcher = $('chat-launch');
+  const questionInput = $('chat-question');
+  const form = $('chat-form');
+  const submit = form.querySelector('button[type="submit"]');
+  const messages = $('chat-messages');
+  let checkedAvailability = false;
+
+  function appendMessage(text, type) {
+    const bubble = document.createElement('div');
+    bubble.className = type === 'user' ? 'chat-bubble mine' : 'chat-bubble';
+    bubble.textContent = text;
+    messages.append(bubble);
+    while (messages.children.length > 20) messages.firstElementChild.remove();
+    messages.scrollTop = messages.scrollHeight;
+    return bubble;
+  }
+
+  function toggle(open) {
+    panel.hidden = !open;
+    launcher.setAttribute('aria-expanded', String(open));
+    (open ? questionInput : launcher).focus();
+    if (open && !checkedAvailability) {
+      checkedAvailability = true;
+      api('/api/chat').then(({ aiAvailable }) => {
+        $('chat-ai-option').hidden = !aiAvailable;
+      }).catch(() => { checkedAvailability = false; });
+    }
+  }
+  launcher.addEventListener('click', () => toggle(panel.hidden));
+  $('chat-close').addEventListener('click', () => toggle(false));
+  document.addEventListener('keydown', event => {
+    if (!panel.hidden && event.key === 'Escape') toggle(false);
+  });
+
+  for (const question of ['Vad gör en extra betalning?', 'Hur fungerar årsavgiften?', 'Hur sparar jag en beräkning?']) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = question;
+    button.addEventListener('click', () => {
+      if (submit.disabled) return;
+      questionInput.value = question;
+      form.requestSubmit();
+    });
+    $('chat-suggestions').append(button);
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const question = questionInput.value.trim();
+    if (!question || submit.disabled) return;
+    submit.disabled = true;
+    const pending = appendMessage('Hämtar svar…', 'guide');
+    try {
+      const data = await api('/api/chat', {
+        method: 'POST', body: JSON.stringify({ question, useAi: $('chat-use-ai').checked }),
+      });
+      pending.remove();
+      appendMessage(question, 'user');
+      const source = data.source === 'ai' ? 'AI-svar' : 'Guidesvar';
+      const note = data.limited ? ' AI-gränsen är nådd för tillfället.' :
+        data.unavailable ? ' AI-svar är tillfälligt otillgängliga.' : '';
+      appendMessage(`${source}: ${data.answer}${note}`, 'guide');
+      if (questionInput.value.trim() === question) questionInput.value = '';
+    } catch (error) {
+      pending.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
   });
 }
 initializeNavigation();
 initializeCalculator();
+initializeHomePreview();
 initializeChat();
 if ($('login-form')) initializeAccount();
 else if ($('email-action-form')) initializeEmailAction();

@@ -45,11 +45,19 @@
       if (outcome.error) errors[field] = outcome.error;
       else clean[field] = outcome.value;
     }
-    const extraPayment = validateNumber(values.extraPayment ?? '0', 'Extra betalning', {
+    const optionalAmount = value => value == null || (typeof value === 'string' && !value.trim()) ? 0 : value;
+    const extraPayment = validateNumber(optionalAmount(values.extraPayment), 'Extra betalning', {
       min: 0, max: MAX_AMOUNT, unit: 'kr',
     });
     if (extraPayment.error) errors.extraPayment = extraPayment.error;
     else clean.extraPayment = extraPayment.value;
+    const annualFee = validateNumber(optionalAmount(values.annualFee), 'Årsavgift', {
+      min: 0, max: 10000, unit: 'kr',
+    });
+    if (annualFee.error) errors.annualFee = annualFee.error;
+    else if (Math.abs(annualFee.value * 100 - Math.round(annualFee.value * 100)) > 1e-7) {
+      errors.annualFee = 'Ange årsavgiften med högst två decimaler.';
+    } else clean.annualFee = annualFee.value;
     if (!FREQUENCIES.includes(values.paymentFrequency)) {
       errors.paymentFrequency = 'Välj ett giltigt betalningsintervall.';
     } else {

@@ -232,3 +232,112 @@ body{font-feature-settings:"kern" 1;text-rendering:optimizeLegibility}
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+.hero-note {
+  margin-top: 1.15rem;
+  color: #c5dcdd;
+  font-size: .9rem;
+}
+
+.hero-visual.home-preview {
+  align-self: center;
+  min-height: 0;
+  padding: clamp(1.2rem, 3vw, 2.25rem);
+}
+
+.home-preview h2 {
+  margin: 0 0 .4rem;
+  line-height: 1.15;
+  font-size: clamp(1.55rem, 4vw, 2.15rem);
+  letter-spacing: -.04em;
+}
+
+.preview-assumptions {
+  color: #d4e7e5;
+  margin: 0 0 1rem;
+}
+
+.preview-controls [role="group"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+}
+
+.preview-controls button {
+  border: 1px solid #81aaa9;
+  border-radius: 9px;
+  padding: .55rem .75rem;
+  color: #f2fcfa;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.preview-controls button[aria-pressed="true"] {
+  border-color: var(--mint);
+  background: var(--mint);
+  color: var(--navy);
+}
+
+.preview-metrics {
+  margin: 1rem 0;
+  border-top: 1px solid #709897;
+}
+
+.preview-metrics div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  column-gap: .75rem;
+  padding: .52rem 0;
+  border-bottom: 1px solid #709897;
+}
+
+.preview-metrics dd {
+  margin: 0;
+  color: #e4fff0;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-preview .link-arrow {
+  color: #d6ffe7;
+}
+
+.breakdown-fees,
+.legend-fees {
+  background: #7da5ce;
+}
+
+.breakdown-fees {
+  display: block;
+  transition: width .3s;
+}
+
+.rate-step {
+  max-width: 18rem;
+  margin-block: .75rem;
+}
+
+#show-all-years {
+  margin: .1rem 0 1rem;
+}
+
+.chat-panel {
+  max-height: calc(100dvh - 88px);
+  overflow-y: auto;
+}
+
+.chat-ai-option {
+  display: flex;
+  gap: .45rem;
+  align-items: center;
+  padding: .15rem 15px .6rem;
+  font-size: .77rem;
+}
+
+.chat-hint a {
+  color: #265f50;
+}

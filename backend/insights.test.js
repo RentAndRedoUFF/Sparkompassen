@@ -41,3 +41,12 @@ test('räntejämförelsen håller övriga antaganden fasta och undviker dubblera
   assert.equal(rows[0].selected, true);
   assert.ok(rows[1].interest > rows[0].interest);
 });
+
+test('årsöversikten och CSV tar med avgiften och räntejämförelsen kan byta steg', () => {
+  const { compareRates } = require('../public/insights');
+  const input = { loanAmount: 12000, interestRate: 0, repaymentYears: 2, paymentFrequency: 'monthly', annualFee: 150 };
+  const plan = buildSchedule(input);
+  assert.deepEqual(plan.yearly.map(row => [row.paid, row.fee]), [[6150, 150], [6150, 150]]);
+  assert.match(csvYearly(plan), /1;6150,00;0,00;150,00;6000,00/);
+  assert.deepEqual(compareRates(input, 0.5).map(row => row.rate), [0, 0.5]);
+});

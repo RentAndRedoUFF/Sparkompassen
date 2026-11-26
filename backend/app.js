@@ -6,10 +6,13 @@ const express = require('express');
 const helmet = require('helmet');
 const { calculateLoan } = require('./calculator');
 const { createMailer } = require('./email');
+const { createAiClient, containsPrivateDetails, guideAnswer } = require('./chat');
 const { createLocalStorage, credentialVersion, hashPassword, passwordMatches } = require('./storage');
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CHAT_DAILY_LIMIT = 50;
 const EMAIL_ACTION_MS = { verify: 24 * 60 * 60 * 1000, reset: 30 * 60 * 1000 };
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const EMAIL_UNAVAILABLE = 'E-postfunktionen är tillfälligt otillgänglig.';
@@ -46,7 +49,10 @@ function validPassword(password) {
   return typeof password === 'string' && password.length >= 12 && password.length <= 128;
 }
 
-function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, store, sendMail = createMailer({ hosted }) } = {}) {
+function createApp({
+  hosted = false, databaseUrl = process.env.DATABASE_URL, store,
+  sendMail = createMailer({ hosted }), askAi = createAiClient(),
+} = {}) {
   const app = express();
   const storage = store ?? (databaseUrl
     ? require('./postgres').createPostgresStorage(databaseUrl)
@@ -86,6 +92,32 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
     res.status(answer.valid ? 200 : 400).json(answer);
   });
 
+  app.get('/api/chat', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json({ aiAvailable: Boolean(askAi && storage) });
+  });
+  app.post('/api/chat', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const question = normalized(req.body?.question);
+    if (question.length < 2 || question.length > 300) {
+      return res.status(400).json({ error: 'Skriv en fråga på 2–300 tecken.' });
+    }
+    if (containsPrivateDetails(question)) {
+      return res.status(400).json({ error: 'Skriv om frågan utan personnummer, mejladress eller lösenord.' });
+    }
+
+    const fallback = { answer: guideAnswer(question), source: 'guide' };
+    if (!askAi || !storage || req.body?.useAi !== true) return res.json(fallback);
+    try {
+      if (await overLimit(req, 'chat-ip', 5) ||
+          await overLimit(req, 'chat-total', CHAT_DAILY_LIMIT, 'all', DAY_MS)) {
+        return res.json({ ...fallback, limited: true });
+      }
+      return res.json({ answer: await askAi(question), source: 'ai' });
+    } catch {
+      return res.json({ ...fallback, unavailable: true });
+    }
+  });
+
   app.use(['/api/auth', '/api/history'], (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
@@ -120,10 +152,10 @@ function createApp({ hosted = false, databaseUrl = process.env.DATABASE_URL, sto
     res.cookie(SESSION_COOKIE, token, { ...cookieOptions, maxAge: SESSION_MS });
   }
 
-  async function overLimit(req, scope, max, subject = req.ip) {
-    const bucket = Math.floor(Date.now() / ATTEMPT_WINDOW_MS);
+  async function overLimit(req, scope, max, subject = req.ip, windowMs = ATTEMPT_WINDOW_MS) {
+    const bucket = Math.floor(Date.now() / windowMs);
     const key = digest(JSON.stringify([scope, subject, bucket]));
-    return await storage.countAttempt(key, (bucket + 1) * ATTEMPT_WINDOW_MS) > max;
+    return await storage.countAttempt(key, (bucket + 1) * windowMs) > max;
   }
 
   function tooManyAttempts(res) {

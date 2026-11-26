@@ -16,7 +16,7 @@ npm run dev
 - **Kalkylator** (`/calculator.html`) – förenklad annuitetsmodell med extra betalningar, räntejämförelser och CSV-export.
 - **Mina sidor** (`/account.html`) – kontoinställningar, namngivning och jämförelse av sparade beräkningar, utloggning och kontoradering.
 
-Den lilla frågeguiden är **inte AI**. Riktig AI-integration tillkommer senare.
+Studieguiden fungerar direkt. Valfria AI-svar kan aktiveras i Vercel.
 
 `backend/data/` innehåller lokalt sparade konton och är exkluderad via `.gitignore`. Lägg aldrig upp `.env`, API-nycklar eller användarkontodata på GitHub.
 
@@ -52,20 +52,34 @@ Vercel använder `app.js` för API:t och `public/` för HTML, CSS och JavaScript
 
 ## Aktivera verifierings- och återställningsmejl
 
-1. Lägg till och verifiera din avsändardomän i [Resend](https://resend.com/docs/dashboard/domains/introduction). Lägg in de DNS-poster Resend visar hos den DNS-leverantör domänen använder.
-2. Lägg in följande tre miljövariabler i Vercel för **Production**. Markera API-nyckeln som känslig.
+1. Skapa en **Email Service** och en **Email Template** i [EmailJS](https://dashboard.emailjs.com/).
+2. Sätt mallens **To Email** till `{{to_email}}`, **Subject** till `{{subject}}` och innehållet till `{{message}}`. Om du gör en egen mall finns även `{{action_url}}` och `{{expires_in}}`. Använd en fast avsändare från din anslutna e-posttjänst.
+3. I **Account → Security** aktiverar du API-anrop från serverapplikationer. Kopiera mallens och tjänstens ID samt den publika och den privata nyckeln till Vercel. [EmailJS om serveranrop](https://github.com/emailjs-com/emailjs-nodejs)
+4. Lägg in följande miljövariabler i Vercel för **Production**. Markera den privata nyckeln som känslig och välj sedan **Redeploy**.
 
    | Variabel | Värde |
    | --- | --- |
-   | `RESEND_API_KEY` | Resend-nyckel med behörighet att skicka e-post |
-   | `MITTCSN_EMAIL_FROM` | En avsändare på den verifierade domänen, till exempel `MittCSN <konto@mittcsn.se>` |
-   | `MITTCSN_BASE_URL` | Sidans publika HTTPS-adress, till exempel `https://mittcsn.vercel.app` |
+   | `EMAILJS_SERVICE_ID` | ID för den anslutna e-posttjänsten |
+   | `EMAILJS_TEMPLATE_ID` | ID för e-postmallen |
+   | `EMAILJS_PUBLIC_KEY` | EmailJS Public Key |
+   | `EMAILJS_PRIVATE_KEY` | EmailJS Private Key |
+   | `MITTCSN_BASE_URL` | Sidans publika HTTPS-adress, till exempel `https://mittcsn.se` |
 
-3. Välj **Redeploy**. Befintliga användare kan skicka en verifieringslänk via **Mina sidor → Kontoinställningar**. Nya användare får ett verifieringsmejl vid registrering.
+Servern använder EmailJS när alla fyra EmailJS-variabler och den publika adressen finns. En befintlig Resend-konfiguration med `RESEND_API_KEY`, `MITTCSN_EMAIL_FROM` och `MITTCSN_BASE_URL` fortsätter fungera om EmailJS saknas.
 
-E-postverifiering behövs för att använda **Glömt lösenord**. Befintliga konton kan logga in direkt och verifiera sin adress från inställningarna. Länkarna kan användas en gång. Verifieringslänkar gäller i 24 timmar och återställningslänkar i 30 minuter. E-postfunktionerna visas när alla tre variablerna är konfigurerade.
+Befintliga användare kan skicka en verifieringslänk via **Mina sidor → Kontoinställningar**. Nya användare får ett verifieringsmejl vid registrering. E-postverifiering behövs för **Glömt lösenord**. Länkarna kan användas en gång och gäller i 24 timmar för verifiering och 30 minuter för återställning.
 
 Kontoradering kräver lösenord och uttrycklig bekräftelse. Åtgärden tar bort kontot och de sparade beräkningarna från den aktiva databasen och loggar ut samtliga sessioner.
+
+## Studieguide och AI-chatt
+
+Guiden använder `/api/chat` och kan svara på vanliga frågor om kalkylatorn direkt. Vill du aktivera AI-svar, lägg till `OPENAI_API_KEY` som en känslig variabel för **Production** och välj **Redeploy**. Modellen kan ställas in med `OPENAI_CHAT_MODEL` och är som standard `gpt-4.1-mini`.
+
+AI är frivilligt för besökaren. Servern skickar den aktuella frågan till OpenAI när besökaren väljer ett AI-svar. Den skickar ingen tidigare konversation eller kontoprofil. I webbversionen begränsar PostgreSQL AI-anropen till fem per 15 minuter per IP-adress och högst 50 per dygn totalt. Om modellens svar saknas eller gränsen nås visas ett guidesvar.
+
+## Årsavgift i kalkylatorn
+
+Modellen lägger en valfri årsavgift på varje påbörjat betalningsår, även sista året om lånet löses tidigare. Det planerade beloppet per betalning visas före avgifter. Totalsummor, årsöversikt, sparad historik och CSV tar med avgiften. För beräkningar som sparats före uppdateringen används 0 kr i årsavgift.
 
 ## Sprint 4.2 – Professionell vidareutveckling
 

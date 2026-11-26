@@ -28,3 +28,20 @@ test('svenska decimaltal accepteras och ogiltiga extra betalningar avvisas', () 
   assert.equal(calculateLoan({ ...base, extraPayment: -1 }).valid, false);
   assert.equal(calculateLoan({ ...base, extraPayment: [1] }).valid, false);
 });
+
+test('årsavgiften ingår en gång per påbörjat betalningsår och skiljs från räntan', () => {
+  const input = { ...base, repaymentYears: 2, annualFee: 150 };
+  const baseline = calculateLoan(input).result;
+  assert.equal(baseline.payment, 500);
+  assert.equal(baseline.fees, 300);
+  assert.equal(baseline.total, 12300);
+
+  const faster = calculateLoan({ ...input, extraPayment: 1500 }).result;
+  assert.equal(faster.periods, 6);
+  assert.equal(faster.interest, 0);
+  assert.equal(faster.fees, 150);
+  assert.equal(faster.totalSaved, 150);
+  assert.equal(calculateLoan({ ...input, annualFee: '42,50' }).result.fees, 85);
+  assert.equal(calculateLoan({ ...input, annualFee: 150.005 }).valid, false);
+  assert.equal(calculateLoan({ ...input, annualFee: '' }).result.fees, 0);
+});

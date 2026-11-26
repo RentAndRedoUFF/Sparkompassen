@@ -13,14 +13,16 @@
     const rate = Number(data.interestRate);
     const years = Number(data.repaymentYears);
     const extra = Number(data.extraPayment ?? 0);
+    const annualFee = Number(data.annualFee ?? 0);
     if (!Number.isFinite(amount) || amount < 1 || amount > 1e7 ||
         !Number.isFinite(rate) || rate < 0 || rate > 100 ||
         !Number.isInteger(years) || years < 1 || years > 25 ||
         !Number.isFinite(extra) || extra < 0 || extra > 1e7 ||
+        !Number.isFinite(annualFee) || annualFee < 0 || annualFee > 10000 ||
         !Object.hasOwn(frequencies, data.paymentFrequency)) {
       throw new RangeError('Ogiltiga beräkningsvärden.');
     }
-    return { amount, rate, years, extra, perYear: frequencies[data.paymentFrequency] };
+    return { amount, rate, years, extra, annualFee, perYear: frequencies[data.paymentFrequency] };
   }
 
   function paymentFor(amount, annualRate, years, perYear) {
@@ -30,7 +32,7 @@
   }
 
   function buildSchedule(data) {
-    const { amount, rate, years, extra, perYear } = getInputs(data);
+    const { amount, rate, years, extra, annualFee, perYear } = getInputs(data);
     const scheduledPeriods = years * perYear;
     const periodicRate = rate / 100 / perYear;
     const basePayment = paymentFor(amount, rate, years, perYear);
@@ -60,8 +62,9 @@
         points.push({ year: elapsed, balance: roundMoney(balance) });
         yearly.push({
           year: Math.ceil(elapsed),
-          paid: roundMoney(yearPaid),
+          paid: roundMoney(yearPaid + annualFee),
           interest: roundMoney(yearInterest),
+          fee: roundMoney(annualFee),
           balance: roundMoney(balance),
         });
         yearPaid = 0;
@@ -76,7 +79,8 @@
       regular: roundMoney(Math.min(plannedPayment, amount * (1 + periodicRate))),
       finalPayment: roundMoney(finalPayment),
       interest: roundMoney(totalInterest),
-      total: roundMoney(amount + totalInterest),
+      fees: roundMoney(annualFee * yearly.length),
+      total: roundMoney(amount + totalInterest + annualFee * yearly.length),
       points,
       yearly,
     };
@@ -89,23 +93,23 @@
       .sort((a, b) => a - b);
     return terms.map(term => {
       const schedule = buildSchedule({ ...data, repaymentYears: term });
-      return { years: term, payment: schedule.regular, interest: schedule.interest, selected: term === years };
+      return { years: term, payment: schedule.regular, interest: schedule.interest, total: schedule.total, selected: term === years };
     });
   }
 
-  function compareRates(data) {
+  function compareRates(data, step = 1) {
     const { rate } = getInputs(data);
-    return [...new Set([Math.max(0, rate - 1), rate, Math.min(100, rate + 1)])].map(interestRate => {
+    return [...new Set([Math.max(0, rate - step), rate, Math.min(100, rate + step)])].map(interestRate => {
       const schedule = buildSchedule({ ...data, interestRate });
-      return { rate: interestRate, payment: schedule.regular, interest: schedule.interest, selected: interestRate === rate };
+      return { rate: interestRate, payment: schedule.regular, interest: schedule.interest, total: schedule.total, selected: interestRate === rate };
     });
   }
 
   function csvYearly(schedule) {
-    const lines = ['År;Inbetalt under året (kr);Ränta under året (kr);Skuld kvar (kr)'];
+    const lines = ['År;Inbetalt under året (kr);Ränta under året (kr);Årsavgift (kr);Skuld kvar (kr)'];
     const cell = value => Number(value).toFixed(2).replace('.', ',');
     for (const row of schedule.yearly) {
-      lines.push([row.year, cell(row.paid), cell(row.interest), cell(row.balance)].join(';'));
+      lines.push([row.year, cell(row.paid), cell(row.interest), cell(row.fee ?? 0), cell(row.balance)].join(';'));
     }
     return '\ufeff' + lines.join('\r\n') + '\r\n';
   }

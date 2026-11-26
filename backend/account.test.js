@@ -72,13 +72,13 @@ async function verifyAccount(first, second, hosted, sent) {
   assert.equal(emailAvailable, true);
   assert.equal(user.emailVerified, true);
 
-  const input = { loanAmount: 250000, interestRate: 2.135, repaymentYears: 20, paymentFrequency: 'monthly', extraPayment: 500, title: 'Grundplan' };
+  const input = { loanAmount: 250000, interestRate: 2.135, repaymentYears: 20, paymentFrequency: 'monthly', extraPayment: 500, annualFee: 150, title: 'Grundplan' };
   const saved = await Promise.all(Array.from({ length: 22 }, () => first('/api/history', { method: 'POST', body: input, cookie })));
   saved.forEach(response => assert.equal(response.status, 201));
   const { history } = await (await second('/api/history', { cookie })).json();
   assert.equal(history.length, 20);
   assert.equal(new Set(history.map(item => item.id)).size, 20);
-  assert.ok(history.every(item => item.extraPayment === 500 && item.title === 'Grundplan'));
+  assert.ok(history.every(item => item.extraPayment === 500 && item.annualFee === 150 && item.result.fees > 0 && item.title === 'Grundplan'));
   const renamed = await second('/api/history/' + history[0].id, {
     method: 'PATCH', body: { title: '  500 kr extra  ' }, cookie,
   });
