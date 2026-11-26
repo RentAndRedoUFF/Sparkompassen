@@ -35,3 +35,22 @@ Spara inte personnummer, officiella CSN-inloggningsuppgifter eller andra känsli
 5. Öppna http://localhost:3000 och testa startsida, kalkylator och Mina sidor.
 
 Skriv inte in någon verklig API-nyckel i frontend. Framtida AI-integration ska göras på servern med miljövariabler.
+
+## Sprint Review – version 0.4.2
+
+### Syfte
+
+Bygga vidare på resultatvyn från Sprint 3 så att användaren kan räkna på ett studielån, jämföra återbetalningstider och spara egna exempel.
+
+### Genomfört i koden
+
+1. **Startsida:** Källbelagd information om studielån, vanliga frågor och snabbvägar till kalkylatorn.
+2. **Kalkylator:** Förenklad annuitetsberäkning med skuldgraf, jämförelse av återbetalningstider och årsöversikt som kan exporteras till CSV.
+3. **Mina sidor:** Testkonton med inloggning och möjlighet att spara, återanvända och ta bort egna beräkningar. Historiken lagras lokalt i JSON.
+4. **Hjälpguide:** Förinställda svar om ränta, beräkningar och konton. Webbappen heter nu MittCSN.
+
+### Testning och nästa steg
+
+- `npm run check` godkändes och alla 37 automatiska tester passerade vid kontrollen den 26 november 2026. Testerna täcker bland annat beräkningar, validering och kontoflöden.
+- Manuella kontroller av mobilvyn och CSV-exporten återstår att dokumentera. Faktisk tidsåtgång framgår inte av projektunderlaget.
+- Inför Sprint 5 är den föreslagna fortsättningen att flytta testkonton och beräkningshistorik till SQLite och förbättra sessions- och behörighetskontrollerna.
