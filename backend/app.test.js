@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const app = require('./app');
 
 // Starta servern på en ledig testport och stäng den efteråt.
-async function withServer(callback) {
-  const server = app.listen(0);
+async function withServer(callback, application = app) {
+  const server = application.listen(0);
   try {
     await new Promise((resolve) => server.once('listening', resolve));
     const port = server.address().port;
@@ -36,4 +36,22 @@ test('startsidan levereras från servern', async () => {
     assert.equal(response.status, 200);
     assert.match(await response.text(), /MittCSN/);
   });
+});
+
+test('lokal utveckling laddar resurser med HTTP och webbversionen kräver HTTPS', async (t) => {
+  const previousEnvironment = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  t.after(() => {
+    if (previousEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousEnvironment;
+  });
+  const options = { databaseUrl: '', sendMail: null, askAi: null };
+  await withServer(async (url) => {
+    const response = await fetch(url);
+    assert.doesNotMatch(response.headers.get('content-security-policy'), /upgrade-insecure-requests/);
+  }, app.createApp(options));
+  await withServer(async (url) => {
+    const response = await fetch(url);
+    assert.match(response.headers.get('content-security-policy'), /upgrade-insecure-requests/);
+  }, app.createApp({ ...options, hosted: true }));
 });

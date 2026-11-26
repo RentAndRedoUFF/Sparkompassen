@@ -3,19 +3,67 @@ const $=id=>document.getElementById(id);
 const fmtMoney=new Intl.NumberFormat('sv-SE',{style:'currency',currency:'SEK',maximumFractionDigits:2});
 const fmtNumber=new Intl.NumberFormat('sv-SE',{maximumFractionDigits:0});
 let lastCalculation=null;
-function initializeNavigation(){
-  const button=$('menu-toggle'),menu=$('main-nav');
-  if(button&&menu){
-    button.addEventListener('click',()=>{const open=!menu.classList.contains('is-open');menu.classList.toggle('is-open',open);button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-label',open?'Stäng menyn':'Öppna menyn');});
-    menu.addEventListener('click',event=>{if(event.target.closest('a')){menu.classList.remove('is-open');button.setAttribute('aria-expanded','false');button.setAttribute('aria-label','Öppna menyn');}});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'){menu.classList.remove('is-open');button.setAttribute('aria-expanded','false');}});
+function initializeNavigation() {
+  const button = $('menu-toggle');
+  const menu = $('main-nav');
+  if (!button || !menu) return;
+
+  const header = button.closest('.header');
+  const compact = window.matchMedia('(max-width: 767px)');
+  const currentPage = menu.querySelector('[aria-current="page"]');
+  const sectionLink = menu.querySelector('a[href$="#sa-funkar-det"]');
+  header.dataset.menuReady = '';
+  let open = false;
+
+  function setOpen(requested) {
+    open = compact.matches && requested;
+    header.toggleAttribute('data-menu-open', open);
+    button.setAttribute('aria-expanded', String(open));
   }
-  // Låt webbplatsen visa normalt innehåll även i en förhandsvisning.
-  // API-beroende funktioner ger en kort återkoppling om servern inte är tillgänglig.
-  const active=menu?.querySelector('.nav-active');if(active)active.setAttribute('aria-current','page');
-  document.addEventListener('click',event=>{
-    if(menu?.classList.contains('is-open') && !menu.contains(event.target) && !button.contains(event.target)){
-      menu.classList.remove('is-open');button.setAttribute('aria-expanded','false');
+
+  function syncCurrentLocation() {
+    if (document.body.dataset.page !== 'home') return;
+    const section = location.hash === '#sa-funkar-det';
+    if (section) {
+      currentPage.removeAttribute('aria-current');
+      sectionLink.setAttribute('aria-current', 'location');
+    } else {
+      currentPage.setAttribute('aria-current', 'page');
+      sectionLink.removeAttribute('aria-current');
+    }
+  }
+
+  if (document.body.dataset.page === 'home') {
+    sectionLink.setAttribute('href', '#sa-funkar-det');
+    window.addEventListener('hashchange', syncCurrentLocation);
+    syncCurrentLocation();
+  }
+
+  button.addEventListener('click', () => setOpen(!open));
+  menu.addEventListener('click', event => {
+    if (event.target.closest('a')) setOpen(false);
+  });
+  document.addEventListener('click', event => {
+    if (open && !header.contains(event.target)) setOpen(false);
+  });
+  header.addEventListener('focusout', event => {
+    if (open && event.relatedTarget && !header.contains(event.relatedTarget)) setOpen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (!open || event.key !== 'Escape') return;
+    event.preventDefault();
+    setOpen(false);
+    button.focus();
+  });
+  compact.addEventListener('change', () => {
+    const focusedInsideMenu = menu.contains(document.activeElement);
+    setOpen(false);
+    if (compact.matches && focusedInsideMenu) button.focus();
+  });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) {
+      setOpen(false);
+      syncCurrentLocation();
     }
   });
 }
@@ -27,13 +75,11 @@ async function api(url,options={}){
   if(!response.ok){const error=new Error(result.error||'Något gick fel.');error.status=response.status;throw error;}
   return result;
 }
-async function updateNavigation() {
+async function loadAccountState() {
   try {
     const { user, demo, emailAvailable } = await api('/api/auth/me');
     if ($('forgot-password')) $('forgot-password').hidden = !emailAvailable;
     if ($('email-verification')) $('email-verification').hidden = !emailAvailable;
-    const accountLink = $('account-link');
-    if (accountLink) accountLink.textContent = user || demo ? 'Mina sidor' : 'Logga in';
     if (demo) {
       const saveButton = $('save-calculation');
       if (saveButton) {
@@ -283,6 +329,7 @@ function initializeAccount(){
     const body = $('saved-comparison-body');
     body.replaceChildren();
     table.hidden = !first || !second || first === second;
+    $('saved-comparison-scroll').hidden = table.hidden;
     if (table.hidden) {
       summary.textContent = scenarios.length < 2 ? '' : 'Välj två olika beräkningar.';
       return;
@@ -442,8 +489,6 @@ function initializeAccount(){
     $('verify-request-status').textContent = '';
     $('dashboard-message').textContent = '';
     $('history-message').textContent = '';
-    const accountLink = $('account-link');
-    if (accountLink) accountLink.textContent = 'Mina sidor';
     await savePending();
     await listHistory();
   }
@@ -531,7 +576,7 @@ function initializeAccount(){
     setTab('login');
     showMessage(text, true);
     $('login-email').focus();
-    await updateNavigation();
+    await loadAccountState();
   }
 
   handleSettings('delete-account-form', 'delete-account-status', '/api/auth/account', () => ({
@@ -558,7 +603,7 @@ function initializeAccount(){
     }
   });
   if(location.search.includes('save=1') && $('auth-banner'))$('auth-banner').hidden=false;
-  updateNavigation().then(user=>{if(user)showDashboard(user)});
+  loadAccountState().then(user=>{if(user)showDashboard(user)});
 }
 function initializeEmailAction() {
   const form = $('email-action-form');
@@ -677,7 +722,7 @@ function initializeChat() {
   launcher.addEventListener('click', () => toggle(panel.hidden));
   $('chat-close').addEventListener('click', () => toggle(false));
   document.addEventListener('keydown', event => {
-    if (!panel.hidden && event.key === 'Escape') toggle(false);
+    if (!event.defaultPrevented && !panel.hidden && event.key === 'Escape') toggle(false);
   });
 
   for (const question of ['Vad gör en extra betalning?', 'Hur fungerar årsavgiften?', 'Hur sparar jag en beräkning?']) {
@@ -722,4 +767,4 @@ initializeHomePreview();
 initializeChat();
 if ($('login-form')) initializeAccount();
 else if ($('email-action-form')) initializeEmailAction();
-else updateNavigation();
+else if ($('csn-form')) loadAccountState();

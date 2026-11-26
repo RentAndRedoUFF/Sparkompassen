@@ -66,7 +66,12 @@ function createApp({
 
   app.disable('x-powered-by');
   if (hosted && process.env.VERCEL === '1') app.set('trust proxy', 1);
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: {
+      // Safari also upgrades localhost requests when this directive is present.
+      directives: { 'upgrade-insecure-requests': cookieOptions.secure ? [] : null },
+    },
+  }));
   app.use('/api', (req, res, next) => {
     if (['POST', 'PATCH', 'DELETE'].includes(req.method)) {
       const origin = req.get('origin');

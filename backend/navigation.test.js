@@ -21,8 +21,17 @@ test('alla menylänkar öppnar befintliga projektsidor också i undermappar',()=
   }
 });
 
-test('varje sida har en tillgänglig mobilmeny',()=>{
-  for(const page of pages){const html=read(page);assert.match(html,/id="menu-toggle"[^>]*aria-expanded="false"/);assert.match(html,/id="main-nav"/);assert.match(html,/src="app.js" defer/)}
+test('varje sida har samma huvudmeny och markerar rätt sida även utan JavaScript', () => {
+  const paths = ['index.html', 'calculator.html', 'index.html#sa-funkar-det', 'account.html'];
+  for (const page of pages) {
+    const html = read(page);
+    const nav = html.match(/<nav id="main-nav"[^>]*>[\s\S]*?<\/nav>/)[0];
+    assert.match(html, /id="menu-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="main-nav"/);
+    assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(match => match[1]), paths);
+    const active = [...nav.matchAll(/<a href="([^"]+)"[^>]*aria-current="page"/g)];
+    assert.deepEqual(active.map(match => match[1]), [page]);
+    assert.match(html, /src="app.js" defer/);
+  }
 });
 
 test('kontosidan innehåller verkliga formulär och säker lösenordsbekräftelse',()=>{
