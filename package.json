@@ -1,8 +1,8 @@
 {
-  "name": "sparkompassen",
+  "name": "mittcsn",
   "version": "0.4.2",
   "private": true,
-  "description": "Sparkompassen – professionell studieskuldsöversikt, jämförelsekalkylator och privat testkonto",
+  "description": "MittCSN – professionell studieskuldsöversikt, jämförelsekalkylator och privat testkonto",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",

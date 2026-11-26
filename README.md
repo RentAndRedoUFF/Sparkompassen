@@ -1,6 +1,6 @@
-# Sparkompassen – Sprint 4
+# MittCSN – Sprint 4
 
-Sparkompassen är ett skolprojekt i Teknikspecialisering för att förklara studieskuld, ränta och återbetalning.
+MittCSN är ett skolprojekt i Teknikspecialisering för att förklara studieskuld, ränta och återbetalning.
 
 ## Kom igång
 

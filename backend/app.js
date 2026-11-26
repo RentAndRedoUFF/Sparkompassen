@@ -27,7 +27,7 @@ function requireUser(req,res,next){const id=currentUser(req);if(!id)return res.s
 function setSession(req,res,id){const sid=crypto.randomBytes(32).toString('hex');sessions.set(sid,{userId:id,exp:Date.now()+SESSION_MS});res.cookie('spark_session',sid,{httpOnly:true,sameSite:'strict',secure:process.env.NODE_ENV==='production',maxAge:SESSION_MS,path:'/'});}
 function publicUser(user){return {id:user.id,name:user.name,email:user.email}}
 function cleanLogin(data){const name=String(data?.name||'').trim().slice(0,70),email=String(data?.email||'').trim().toLowerCase(),password=data?.password;return {name,email,password}}
-app.get('/api/health',(_req,res)=>res.status(200).json({status:'ok',application:'Sparkompassen'}));
+app.get('/api/health',(_req,res)=>res.status(200).json({status:'ok',application:'MittCSN'}));
 app.post('/api/calculate',(req,res)=>{const answer=calculateLoan(req.body);res.status(answer.valid?200:400).json(answer)});
 app.post('/api/auth/register',(req,res)=>{
   const {name,email,password}=cleanLogin(req.body);

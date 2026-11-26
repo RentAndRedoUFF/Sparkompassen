@@ -9,5 +9,5 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 app.listen(port, () => {
-  console.log(`Sparkompassen körs på http://localhost:${port}`);
+  console.log(`MittCSN körs på http://localhost:${port}`);
 });

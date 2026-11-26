@@ -30,7 +30,7 @@ test('konto kan skapas, logga in, spara historik och logga ut',async()=>withServ
  const history2=await fetch(base+'/api/history',{headers:{Cookie:loginCookie}});assert.equal((await history2.json()).history.length,1);
 }));
 test('startsida, kalkylator och konto levereras var för sig',async()=>withServer(async base=>{
- for(const p of ['/','/calculator.html','/account.html']){const r=await fetch(base+p);assert.equal(r.status,200);assert.match(await r.text(),/Sparkompassen|sparkompassen/)}
+ for(const p of ['/','/calculator.html','/account.html']){const r=await fetch(base+p);assert.equal(r.status,200);assert.match(await r.text(),/MittCSN/)}
 }));
 
 test('historik är privat för varje konto och kan hämtas efter ny inloggning',async()=>withServer(async base=>{

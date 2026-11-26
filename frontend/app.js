@@ -75,11 +75,11 @@ function renderInsights(data){
   $('insights-status').textContent='';
   $('download-csv').onclick=()=>{
     const content=insights.csvYearly(schedule),blob=new Blob([content],{type:'text/csv;charset=utf-8'});
-    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='sparkompassen-arsoversikt.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mittcsn-arsoversikt.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
     $('insights-status').textContent='Årsöversikten har exporterats till CSV.';
   };
   $('copy-summary').onclick=async()=>{
-    const description=`Sparkompassen – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nTid: ${input.repaymentYears} år\nBetalning: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nEj officiell CSN-beräkning.`;
+    const description=`MittCSN – pedagogiskt exempel\nStudieskuld: ${money(principal)}\nRänta: ${Number(input.interestRate)} %\nTid: ${input.repaymentYears} år\nBetalning: ${money(result.payment)} per ${ {monthly:'månad',quarterly:'kvartal',yearly:'år'}[input.paymentFrequency]}\nTotal ränta: ${money(result.interest)}\nEj officiell CSN-beräkning.`;
     try{await navigator.clipboard.writeText(description);$('insights-status').textContent='Sammanfattningen har kopierats.'}
     catch{$('insights-status').textContent='Kunde inte kopiera automatiskt. Du kan läsa uppgifterna i resultatkortet.'}
   };
@@ -233,7 +233,7 @@ function initializeAccount(){
 }
 function initializeChat(){
   const root=$('chat-root');if(!root)return;
-  root.innerHTML='<button id="chat-launch" class="chat-launch" aria-controls="chat-panel" aria-expanded="false" type="button">✧ Fråga guiden</button><section class="chat-panel" id="chat-panel" aria-label="Hjälpguide" hidden><div class="chat-head"><div><strong>✧ Sparkompassens guide</strong><small>Enkel frågor-och-svar-guide · AI kommer senare</small></div><button type="button" class="chat-close" id="chat-close" aria-label="Stäng guiden">×</button></div><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-bubble">Hej! Jag kan svara på vanliga frågor om studieskuld, ränta, kalkylatorn och hur du sparar exempel. Jag är ännu inte en AI-chatt.</div></div><form class="chat-input" id="chat-form"><input id="chat-question" aria-label="Din fråga" maxlength="300" placeholder="Fråga om CSN eller kalkylatorn…" required><button type="submit">Skicka</button></form><p class="chat-hint">Skriv inga personnummer eller andra känsliga uppgifter.</p></section>';
+  root.innerHTML='<button id="chat-launch" class="chat-launch" aria-controls="chat-panel" aria-expanded="false" type="button">✧ Fråga guiden</button><section class="chat-panel" id="chat-panel" aria-label="Hjälpguide" hidden><div class="chat-head"><div><strong>✧ MittCSN:s guide</strong><small>Enkel frågor-och-svar-guide · AI kommer senare</small></div><button type="button" class="chat-close" id="chat-close" aria-label="Stäng guiden">×</button></div><div class="chat-messages" id="chat-messages" aria-live="polite"><div class="chat-bubble">Hej! Jag kan svara på vanliga frågor om studieskuld, ränta, kalkylatorn och hur du sparar exempel. Jag är ännu inte en AI-chatt.</div></div><form class="chat-input" id="chat-form"><input id="chat-question" aria-label="Din fråga" maxlength="300" placeholder="Fråga om CSN eller kalkylatorn…" required><button type="submit">Skicka</button></form><p class="chat-hint">Skriv inga personnummer eller andra känsliga uppgifter.</p></section>';
   const quick=document.createElement('div');quick.className='chat-suggestions';
   for(const text of ['Hur räknar ni?','Behöver jag konto?','Vad är CSN-räntan?']){
     const b=document.createElement('button');b.type='button';b.textContent=text;

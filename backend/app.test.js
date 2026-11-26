@@ -18,7 +18,7 @@ test('servern svarar på hälsokontroll', async () => {
   await withServer(async (url) => {
     const response = await fetch(`${url}/api/health`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { status: 'ok', application: 'Sparkompassen' });
+    assert.deepEqual(await response.json(), { status: 'ok', application: 'MittCSN' });
   });
 });
 
@@ -34,6 +34,6 @@ test('startsidan levereras från servern', async () => {
   await withServer(async (url) => {
     const response = await fetch(url);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Sparkompassen/);
+    assert.match(await response.text(), /MittCSN/);
   });
 });

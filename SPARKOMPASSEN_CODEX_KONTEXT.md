@@ -1,10 +1,10 @@
-# Sparkompassen – projektkontext för Codex
+# MittCSN – projektkontext för Codex
 
 > Detta är en överlämningssammanfattning av projektarbetet i ChatGPT, inte en fullständig export av gamla chattmeddelanden. **Koden i projektmappen är den faktiska källan till sanning**. Kontrollera alltid filer och tester innan du ändrar något.
 
 ## Projektets syfte
 
-Sparkompassen är ett svenskt gymnasieprojekt i Teknikspecialisering för att hjälpa studenter förstå studieskuld, ränta och återbetalning. Projektet är **en pedagogisk prototyp**, inte en bank, CSN-tjänst eller personlig finansiell rådgivare. Kommunicera detta tydligt i UI.
+MittCSN är ett svenskt gymnasieprojekt i Teknikspecialisering för att hjälpa studenter förstå studieskuld, ränta och återbetalning. Projektet är **en pedagogisk prototyp**, inte en bank, CSN-tjänst eller personlig finansiell rådgivare. Kommunicera detta tydligt i UI.
 
 - Språk i webbappen, dokumentation och användarflöden: **svenska**.
 - Mål: **hög teknisk kvalitet (A-nivå)**, tillgänglig, modern, professionell och mänskligt genomarbetad nordisk finansdesign. Ta inspiration från tydlig hierarki hos bankwebbplatser men kopiera inte deras varumärke, design eller text.
@@ -98,7 +98,7 @@ Prioritera **migrering utan dataförlust** i lokala testmiljöer. Inga förändr
 
 Repository: `https://github.com/RentAndRedoUFF/Sparkompassen`
 
-Vid senaste kontrollen var repositoryt tomt. **Kontrollera om det senare har fått filer**. Codex kan arbeta direkt med den uppackade lokala projektmappen i VS Code även om GitHub fortfarande är tomt. För att synka senare kan användaren skapa en första commit och pusha projektet säkert.
+Den aktuella koden finns på grenen `main`. Använd GitHub-repot som utgångspunkt för fortsatt arbete.
 
 ## Första uppdraget till Codex
 
