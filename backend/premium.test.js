@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
-const read=n=>fs.readFileSync(path.join(__dirname,'../frontend',n),'utf8');
+const read=n=>fs.readFileSync(path.join(__dirname,'../public',n),'utf8');
 test('inget störande utvecklingsmeddelande eller generisk etikett visas',()=>{
   for(const name of ['index.html','calculator.html','account.html']){
     assert.doesNotMatch(read(name),/id="runtime-notice"/);

@@ -24,7 +24,7 @@ Se `SPRINT_4.md` för tekniska detaljer, viktiga modellbegränsningar och källo
 
 ## Viktigt: öppna webbappen via Node-servern
 
-Starta från projektmappen med `npm install` följt av `npm run dev`. Öppna sedan **http://localhost:3000** (inte `frontend/index.html` direkt och inte VS Code Live Server på port 5500). Inloggningen är en riktig lokal serverfunktion, inte en offline-demo. HTML-länkarna har också gjorts relativa för att navigeringen ska fungera när projektet ligger i en undermapp.
+Starta från projektmappen med `npm install` följt av `npm run dev`. Öppna sedan **http://localhost:3000** (inte `public/index.html` direkt och inte VS Code Live Server på port 5500). Inloggningen är en riktig lokal serverfunktion, inte en offline-demo. HTML-länkarna har också gjorts relativa för att navigeringen ska fungera när projektet ligger i en undermapp.
 
 ### Testa inloggningen
 

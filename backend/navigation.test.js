@@ -3,7 +3,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const root=path.join(__dirname,'..','frontend');
+const root=path.join(__dirname,'..','public');
 const pages=['index.html','calculator.html','account.html'];
 const read=name=>fs.readFileSync(path.join(root,name),'utf8');
 

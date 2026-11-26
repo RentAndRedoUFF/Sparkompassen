@@ -27,7 +27,30 @@ async function api(url,options={}){
   if(!response.ok){const error=new Error(result.error||'Något gick fel.');error.status=response.status;throw error;}
   return result;
 }
-async function updateNavigation(){try{const {user}=await api('/api/auth/me');const el=$('account-link');if(el)el.textContent=user?'Mina sidor':'Logga in';return user}catch{return null}}
+async function updateNavigation() {
+  try {
+    const { user, demo } = await api('/api/auth/me');
+    const accountLink = $('account-link');
+    if (accountLink) accountLink.textContent = user || demo ? 'Mina sidor' : 'Logga in';
+    if (demo) {
+      const saveButton = $('save-calculation');
+      if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.textContent = 'Sparande är avstängt i demon';
+      }
+      const authArea = $('auth-area');
+      if (authArea) {
+        authArea.hidden = true;
+        const notice = document.createElement('p');
+        notice.textContent = 'Inloggning och sparade beräkningar är avstängda i webbversionen.';
+        authArea.before(notice);
+      }
+    }
+    return user;
+  } catch {
+    return null;
+  }
+}
 function renderInsights(data){
   const insights=window.SparkompassenInsights;
   if(!insights)return;
@@ -252,4 +275,8 @@ function initializeChat(){
     bubble(answer);input.value='';messages.scrollTop=messages.scrollHeight;
   });
 }
-initializeNavigation();updateNavigation();initializeCalculator();initializeAccount();initializeChat();
+initializeNavigation();
+initializeCalculator();
+initializeChat();
+if ($('login-form')) initializeAccount();
+else updateNavigation();

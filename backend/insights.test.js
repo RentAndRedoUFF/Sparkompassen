@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {buildSchedule,compareTerms,csvYearly,paymentFor}=require('../frontend/insights');
+const {buildSchedule,compareTerms,csvYearly,paymentFor}=require('../public/insights');
 test('nollränta betalas av jämnt utan restskuld',()=>{
   const data={loanAmount:12000,interestRate:0,repaymentYears:1,paymentFrequency:'monthly'};
   const s=buildSchedule(data);

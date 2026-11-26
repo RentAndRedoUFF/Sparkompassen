@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateLoan } = require('../frontend/validation');
+const { validateLoan } = require('../public/validation');
 
 const valid = { loanAmount: '250000', interestRate: '2.135', repaymentYears: '20', paymentFrequency: 'quarterly' };
 

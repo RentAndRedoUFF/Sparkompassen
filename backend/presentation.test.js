@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {formatOverview} = require('../frontend/presentation');
-const {validateLoan} = require('../frontend/validation');
+const {formatOverview} = require('../public/presentation');
+const {validateLoan} = require('../public/validation');
 const sample = {loanAmount:250000, interestRate:2.135, repaymentYears:20, paymentFrequency:'quarterly'};
 
 test('svenskt beloppsformat används i resultatsidans kort', () => {

@@ -1,5 +1,5 @@
 'use strict';
-const { validateLoan } = require('../frontend/validation');
+const { validateLoan } = require('../public/validation');
 const PERIODS = {monthly: 12, quarterly: 4, yearly: 1};
 function calculateLoan(input) {
   const checked = validateLoan(input || {});
